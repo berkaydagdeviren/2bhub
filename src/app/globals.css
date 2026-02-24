@@ -2,26 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body {
+    @apply bg-hub-bg text-hub-primary;
+  }
+
+  ::selection {
+    @apply bg-hub-accent/20 text-hub-primary;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-hub-border rounded-full hover:bg-hub-muted;
+  }
+    .touch-pinch-zoom {
+    touch-action: pinch-zoom pan-x pan-y;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
+@layer components {
+  .input-base {
+    @apply w-full px-4 py-3 rounded-xl border border-hub-border bg-hub-bg/50
+           text-hub-primary placeholder:text-hub-muted
+           focus:outline-none focus:ring-2 focus:ring-hub-accent/20 focus:border-hub-accent
+           transition-all duration-200;
+  }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+  .label-base {
+    @apply block text-xs font-medium text-hub-secondary uppercase tracking-wider mb-2;
+  }
+
+  .btn-primary {
+    @apply py-3 px-6 bg-hub-accent hover:bg-hub-accent-hover text-white rounded-xl
+           font-medium transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed
+           shadow-sm hover:shadow-md active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply py-3 px-6 border border-hub-border text-hub-secondary
+           hover:text-hub-primary hover:border-hub-accent/50 rounded-xl
+           font-medium transition-all duration-200 active:scale-[0.98];
+  }
+
+  .card {
+    @apply bg-white rounded-2xl border border-hub-border/50 shadow-hub;
   }
 }
