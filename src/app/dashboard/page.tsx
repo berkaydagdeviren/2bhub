@@ -30,7 +30,7 @@ const MODULES = [
     description: "Manage business-to-business orders",
     icon: Building2,
     href: "/dashboard/sales?mode=b2b",
-    ready: false,
+    ready: true,
   },
   {
     title: "Brands",
@@ -46,12 +46,12 @@ const MODULES = [
     href: "/dashboard/suppliers",
     ready: true,
   },
-  {
+    {
     title: "Firms",
     description: "B2B customer accounts & records",
     icon: Users,
     href: "/dashboard/firms",
-    ready: false,
+    ready: true,
   },
   {
     title: "Reports",

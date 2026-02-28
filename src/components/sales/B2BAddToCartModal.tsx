@@ -7,108 +7,40 @@ import {
   ShoppingCart,
   Minus,
   Plus,
-  ToggleLeft,
-  ToggleRight,
   Package,
   Layers,
+  ToggleLeft,
+  ToggleRight
 } from "lucide-react";
-import type { Product, ProductVariation, CartItem } from "@/types";
+import type { Product, ProductVariation, B2BCartItem } from "@/types";
 
-interface AddToCartModalProps {
+interface B2BAddToCartModalProps {
   product: Product | null;
-  calcSalePrice: (
-    listPrice: number,
-    discountPercent: number,
-    kdvPercent: number,
-    profitPercent: number,
-    currency: string
-  ) => {
-    buy: number;
-    saleForeign: number;
-    saleTry: number;
-    rate: number;
-    isForeign: boolean;
-  };
-  getExchangeRate: (currency: string) => number;
   onClose: () => void;
-  onAddToCart: (item: CartItem) => void;
+  onAddToCart: (item: B2BCartItem) => void;
 }
 
-export default function AddToCartModal({
+export default function B2BAddToCartModal({
   product,
-  calcSalePrice,
-  getExchangeRate,
   onClose,
   onAddToCart,
-}: AddToCartModalProps) {
+}: B2BAddToCartModalProps) {
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState("1");
-  const [usePrice2, setUsePrice2] = useState(false);
   const [selectedVariation, setSelectedVariation] =
     useState<ProductVariation | null>(null);
-
-  // Reset state when product changes
+  const [usePrice2, setUsePrice2] = useState(false);
   useEffect(() => {
     setQuantity(1);
     setQuantityInput("1");
-    setUsePrice2(false);
     setSelectedVariation(null);
+    setUsePrice2(false)
   }, [product?.id]);
 
   if (!product) return null;
   const p = product;
-  const hasVariations =
-    product.variations && product.variations.length > 0;
-  const hasPrice2 = product.has_price2;
 
-  // Determine pricing source
-  function getCurrentPrice() {
-    const prod = product!;
-    let listPrice: number;
-    let discount: number;
-
-    if (selectedVariation?.has_custom_price) {
-      if (usePrice2 && hasPrice2) {
-        listPrice =
-          Number(selectedVariation.list_price2) ||
-          Number(selectedVariation.list_price) ||
-          0;
-        discount =
-          Number(selectedVariation.discount_percent2) ||
-          Number(selectedVariation.discount_percent) ||
-          0;
-      } else {
-        listPrice = Number(selectedVariation.list_price) || 0;
-        discount = Number(selectedVariation.discount_percent) || 0;
-      }
-    } else {
-      if (usePrice2 && hasPrice2) {
-        listPrice = Number(prod.list_price2) || 0;
-        discount = Number(prod.discount_percent2) || 0;
-      } else {
-        listPrice = Number(prod.list_price) || 0;
-        discount = Number(prod.discount_percent) || 0;
-      }
-    }
-
-    const result = calcSalePrice(
-      listPrice,
-      discount,
-      Number(prod.kdv_percent),
-      Number(prod.profit_percent),
-      prod.currency
-    );
-
-    return {
-      unitPriceForeign: result.saleForeign,
-      unitPriceTry: result.saleTry,
-      currency: prod.currency,
-      rate: result.rate,
-    };
-  }
-
-  const price = getCurrentPrice();
-  const lineTotal = Math.round(price.unitPriceTry * quantity * 100) / 100;
+  const hasVariations = p.variations && p.variations.length > 0;
 
   function handleQuantityChange(val: string) {
     setQuantityInput(val);
@@ -119,53 +51,42 @@ export default function AddToCartModal({
   }
 
   function incrementQty() {
-    const newQty = quantity + 1;
-    setQuantity(newQty);
-    setQuantityInput(String(newQty));
+    const n = quantity + 1;
+    setQuantity(n);
+    setQuantityInput(String(n));
   }
 
   function decrementQty() {
     if (quantity <= 1) return;
-    const newQty = quantity - 1;
-    setQuantity(newQty);
-    setQuantityInput(String(newQty));
+    const n = quantity - 1;
+    setQuantity(n);
+    setQuantityInput(String(n));
   }
 
   function handleAdd() {
-    const prod = product!;
     if (hasVariations && !selectedVariation) return;
     if (quantity <= 0) return;
 
-    const cartItem: CartItem = {
-      id: crypto.randomUUID(),
-      product_id: prod.id,
-      product_name: prod.name,
-      product_image: prod.image_url,
-      brand_name:
-        prod.brand && typeof prod.brand === "object"
-          ? (prod.brand as { name: string }).name
-          : null,
-      netsis_code: prod.netsis_code || null,
-      variation_label: selectedVariation?.variation_label || null,
-      quantity,
-      unit_price: price.unitPriceForeign,
-      price_type: usePrice2 ? "price2" : "price1",
-      currency: prod.currency,
-      exchange_rate: price.rate || 1,
-      unit_price_try: price.unitPriceTry,
-      line_total: lineTotal,
-    };
+    const brandName =
+      p.brand && typeof p.brand === "object"
+        ? (p.brand as { name: string }).name
+        : null;
+
+    const cartItem: B2BCartItem = {
+  id: crypto.randomUUID(),
+  product_id: p.id,
+  product_name: p.name,
+  product_image: p.image_url,
+  brand_name: brandName,
+  netsis_code: p.netsis_code,
+  variation_label: selectedVariation?.variation_label || null,
+  quantity,
+  price_type: usePrice2 ? "price2" : "price1",
+};
 
     onAddToCart(cartItem);
     onClose();
   }
-
-  const currencySymbols: Record<string, string> = {
-    TRY: "₺",
-    USD: "$",
-    EUR: "€",
-  };
-  const sym = currencySymbols[product.currency] || "₺";
 
   return (
     <AnimatePresence>
@@ -189,7 +110,7 @@ export default function AddToCartModal({
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-hub-border/50 flex-shrink-0">
               <h3 className="text-base font-semibold text-hub-primary truncate pr-4">
-                {product.name}
+                {p.name}
               </h3>
               <button
                 onClick={onClose}
@@ -204,10 +125,10 @@ export default function AddToCartModal({
               {/* Product preview */}
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-xl bg-hub-bg overflow-hidden flex-shrink-0">
-                  {product.image_url ? (
+                  {p.image_url ? (
                     <img
-                      src={product.image_url}
-                      alt={product.name}
+                      src={p.image_url}
+                      alt={p.name}
                       className="w-full h-full object-contain"
                     />
                   ) : (
@@ -218,13 +139,20 @@ export default function AddToCartModal({
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-hub-primary truncate">
-                    {product.name}
+                    {p.name}
                   </p>
-                  {product.brand && typeof product.brand === "object" && (
-                    <span className="text-[10px] font-medium text-hub-accent bg-hub-accent/10 px-2 py-0.5 rounded-full">
-                      {(product.brand as { name: string }).name}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {p.brand && typeof p.brand === "object" && (
+                      <span className="text-[10px] font-medium text-hub-accent bg-hub-accent/10 px-2 py-0.5 rounded-full">
+                        {(p.brand as { name: string }).name}
+                      </span>
+                    )}
+                    {p.netsis_code && (
+                      <span className="text-[10px] text-hub-muted font-mono">
+                        {p.netsis_code}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -233,12 +161,10 @@ export default function AddToCartModal({
                 <div>
                   <div className="flex items-center gap-1.5 mb-3">
                     <Layers className="w-3.5 h-3.5 text-hub-accent" />
-                    <label className="label-base mb-0">
-                      Select Variation *
-                    </label>
+                    <label className="label-base mb-0">Select Variation *</label>
                   </div>
                   <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto">
-                    {product.variations!.map((v) => {
+                    {p.variations!.map((v) => {
                       const isSelected = selectedVariation?.id === v.id;
                       return (
                         <button
@@ -252,35 +178,10 @@ export default function AddToCartModal({
                           }`}
                         >
                           {v.variation_label}
-                          {v.sku && (
-                            <span className="text-[9px] text-hub-muted block">
-                              {v.sku}
-                            </span>
-                          )}
                         </button>
                       );
                     })}
                   </div>
-                </div>
-              )}
-
-              {/* Price Type Toggle */}
-              {hasPrice2 && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setUsePrice2(!usePrice2)}
-                    className="flex items-center gap-2 text-sm text-hub-secondary hover:text-hub-primary transition-colors"
-                  >
-                    {usePrice2 ? (
-                      <ToggleRight className="w-5 h-5 text-hub-accent" />
-                    ) : (
-                      <ToggleLeft className="w-5 h-5" />
-                    )}
-                    {usePrice2
-                      ? product.price2_label || "Price 2"
-                      : "Price 1"}
-                  </button>
                 </div>
               )}
 
@@ -314,48 +215,54 @@ export default function AddToCartModal({
                 </div>
               </div>
 
-              {/* Price Display */}
-              <div className="bg-hub-bg/50 rounded-xl p-4 space-y-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-hub-secondary">Unit Price</span>
-                  <span className="font-medium text-hub-primary">
-                    {product.currency !== "TRY" && (
-                      <span className="text-hub-muted mr-1.5">
-                        {sym}
-                        {price.unitPriceForeign.toFixed(2)} →
-                      </span>
-                    )}
-                    ₺{price.unitPriceTry.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-hub-secondary">Quantity</span>
-                  <span className="font-medium text-hub-primary">
-                    ×{quantity}
-                  </span>
-                </div>
-                <div className="pt-2 border-t border-hub-border/30 flex justify-between">
-                  <span className="text-sm font-semibold text-hub-primary">
-                    Line Total
-                  </span>
-                  <span className="text-lg font-bold text-hub-accent">
-                    ₺{lineTotal.toFixed(2)}
-                  </span>
-                </div>
-              </div>
+              {/* Price Type Toggle */}
+{p.has_price2 && (
+  <div>
+    <label className="label-base">Price Variant</label>
+    <div className="flex gap-2">
+      <button
+        type="button"
+        onClick={() => setUsePrice2(false)}
+        className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border text-sm font-medium transition-all ${
+          !usePrice2
+            ? "border-hub-accent bg-hub-accent/10 text-hub-accent"
+            : "border-hub-border text-hub-secondary hover:border-hub-accent/30"
+        }`}
+      >
+        Price 1
+      </button>
+      <button
+        type="button"
+        onClick={() => setUsePrice2(true)}
+        className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border text-sm font-medium transition-all ${
+          usePrice2
+            ? "border-hub-accent bg-hub-accent/10 text-hub-accent"
+            : "border-hub-border text-hub-secondary hover:border-hub-accent/30"
+        }`}
+      >
+        {p.price2_label || "Price 2"}
+      </button>
+    </div>
+  </div>
+)}
+
+{/* B2B Notice */}
+<div className="bg-hub-bg/50 rounded-xl p-3">
+  <p className="text-[11px] text-hub-muted text-center">
+    B2B orders — pricing handled per firm agreement
+  </p>
+</div>
             </div>
 
             {/* Footer */}
             <div className="px-6 py-4 border-t border-hub-border/50 flex-shrink-0">
               <button
                 onClick={handleAdd}
-                disabled={
-                  quantity <= 0 || (hasVariations && !selectedVariation)
-                }
+                disabled={quantity <= 0 || (hasVariations && !selectedVariation)}
                 className="btn-primary w-full flex items-center justify-center gap-2"
               >
                 <ShoppingCart className="w-4 h-4" />
-                Add to Cart — ₺{lineTotal.toFixed(2)}
+                Add to Order — {quantity} pcs
               </button>
               {hasVariations && !selectedVariation && (
                 <p className="text-[11px] text-hub-error text-center mt-2">

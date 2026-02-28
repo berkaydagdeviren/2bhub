@@ -10,37 +10,92 @@ import {
   Banknote,
   CheckCircle2,
   X,
+  Building2,
+  ShoppingBag,
+  Lock,
+  AlertTriangle,
+  Share2,
 } from "lucide-react";
 import Link from "next/link";
 import { usePricing } from "@/hooks/usePricing";
 import Cart from "@/components/sales/Cart";
+import B2BCart from "@/components/sales/B2BCart";
 import AddToCartModal from "@/components/sales/AddToCartModal";
-import type { Product, CartItem, RetailSale } from "@/types";
+import B2BAddToCartModal from "@/components/sales/B2BAddToCartModal";
+import MockIrsaliye from "@/components/sales/MockIrsaliye";
+import type {
+  Product,
+  CartItem,
+  B2BCartItem,
+  RetailSale,
+  B2BSale,
+  Firm,
+} from "@/types";
+
+type SaleMode = "retail" | "b2b";
 
 export default function SalesPage() {
+  // Mode
+  const [mode, setMode] = useState<SaleMode>(() => {
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("mode") === "b2b" ? "b2b" : "retail";
+  }
+  return "retail";
+});
+
   // Search
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [searching, setSearching] = useState(false);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  // Cart
-  const [cart, setCart] = useState<CartItem[]>([]);
-
-  // Add to cart modal
+  // Retail Cart
+  const [retailCart, setRetailCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-
-  // Checkout
   const [discountInput, setDiscountInput] = useState("");
   const [checkoutNotes, setCheckoutNotes] = useState("");
   const [processing, setProcessing] = useState(false);
-  const [completedSale, setCompletedSale] = useState<RetailSale | null>(null);
+  const [completedRetailSale, setCompletedRetailSale] =
+    useState<RetailSale | null>(null);
+
+  // B2B Cart
+  const [b2bCart, setB2BCart] = useState<B2BCartItem[]>([]);
+  const [selectedB2BProduct, setSelectedB2BProduct] =
+    useState<Product | null>(null);
+  const [b2bNote, setB2BNote] = useState("");
+  const [completedB2BSale, setCompletedB2BSale] = useState<B2BSale | null>(
+    null
+  );
+  const [irsaliyeSale, setIrsaliyeSale] = useState<B2BSale | null>(null);
+
+  // Firm selection
+  const [firms, setFirms] = useState<Firm[]>([]);
+  const [firmSearch, setFirmSearch] = useState("");
+  const [selectedFirm, setSelectedFirm] = useState<Firm | null>(null);
+  const [showFirmDropdown, setShowFirmDropdown] = useState(false);
 
   // Pricing
   const { calcSalePrice, getExchangeRate } = usePricing();
 
-  // Search input ref
-  const searchRef = useRef<HTMLInputElement>(null);
+  // ── Fetch Firms ────────────────────────────────────────
+  const fetchFirms = useCallback(async () => {
+    try {
+      const res = await fetch("/api/firms", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
+      const data = await res.json();
+      if (data.firms) setFirms(data.firms);
+    } catch (err) {
+      console.error("Failed to fetch firms:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchFirms();
+  }, [fetchFirms]);
 
   // ── Search ─────────────────────────────────────────────
   const doSearch = useCallback(async (query: string) => {
@@ -49,7 +104,6 @@ export default function SalesPage() {
       setSearching(false);
       return;
     }
-
     setSearching(true);
     try {
       const res = await fetch(
@@ -66,51 +120,94 @@ export default function SalesPage() {
 
   function handleSearchChange(val: string) {
     setSearchQuery(val);
-
-    if (searchTimeout.current) {
-      clearTimeout(searchTimeout.current);
-    }
-
-    searchTimeout.current = setTimeout(() => {
-      doSearch(val);
-    }, 300);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => doSearch(val), 300);
   }
 
-  // ── QR Scan URL handler ────────────────────────────────
+  // ── QR Scan ────────────────────────────────────────────
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const productId = url.searchParams.get("product_id");
-    if (productId) {
-      addByProductId(productId);
-      // Clean URL
-      window.history.replaceState({}, "", "/dashboard/sales");
-    }
-  }, []);
+  const url = new URL(window.location.href);
+
+  // Read mode from URL (for B2B card on dashboard)
+  const urlMode = url.searchParams.get("mode");
+  if (urlMode === "b2b") {
+    setMode("b2b");
+  }
+
+  // QR scan handler
+  const productId = url.searchParams.get("product_id");
+  if (productId) {
+    addByProductId(productId);
+  }
+
+  // Clean URL params
+  if (urlMode || productId) {
+    window.history.replaceState({}, "", "/dashboard/sales");
+  }
+}, []);
 
   async function addByProductId(productId: string) {
     try {
-      const res = await fetch(
-        `/api/products/search?id=${productId}`,
-        { cache: "no-store" }
-      );
+      const res = await fetch(`/api/products/search?id=${productId}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
       if (data.products && data.products.length > 0) {
-        setSelectedProduct(data.products[0]);
+        if (mode === "b2b") {
+          setSelectedB2BProduct(data.products[0]);
+        } else {
+          setSelectedProduct(data.products[0]);
+        }
       }
     } catch (err) {
       console.error("Failed to load product by ID:", err);
     }
   }
 
-  // ── Cart Operations ────────────────────────────────────
-  function addToCart(item: CartItem) {
-    setCart((prev) => [...prev, item]);
-    // Refocus search
+  // ── Mode Switch ────────────────────────────────────────
+  function switchMode(newMode: SaleMode) {
+    if (newMode === mode) return;
+
+    // Transfer cart items if switching mid-sale
+    if (newMode === "b2b" && retailCart.length > 0) {
+      const transferred: B2BCartItem[] = retailCart.map((item) => ({
+  id: item.id,
+  product_id: item.product_id,
+  product_name: item.product_name,
+  product_image: item.product_image,
+  brand_name: item.brand_name,
+  netsis_code: item.netsis_code || null,
+  variation_label: item.variation_label,
+  quantity: item.quantity,
+  price_type: item.price_type,
+}));
+      setB2BCart(transferred);
+      setRetailCart([]);
+    } else if (newMode === "retail" && b2bCart.length > 0) {
+      // Can't transfer B2B to retail easily (no pricing), just warn
+      if (
+        !confirm(
+          "Switching to retail will clear B2B cart (no prices assigned). Continue?"
+        )
+      ) {
+        return;
+      }
+      setB2BCart([]);
+    }
+
+    setMode(newMode);
+    setSearchQuery("");
+    setSearchResults([]);
+  }
+
+  // ── Retail Cart Ops ────────────────────────────────────
+  function addToRetailCart(item: CartItem) {
+    setRetailCart((prev) => [...prev, item]);
     setTimeout(() => searchRef.current?.focus(), 100);
   }
 
-  function updateCartQuantity(itemId: string, quantity: number) {
-    setCart((prev) =>
+  function updateRetailQty(itemId: string, quantity: number) {
+    setRetailCart((prev) =>
       prev.map((item) => {
         if (item.id !== itemId) return item;
         const newLineTotal =
@@ -120,30 +217,48 @@ export default function SalesPage() {
     );
   }
 
-  function removeCartItem(itemId: string) {
-    setCart((prev) => prev.filter((item) => item.id !== itemId));
+  function removeRetailItem(itemId: string) {
+    setRetailCart((prev) => prev.filter((item) => item.id !== itemId));
   }
 
-  function clearCart() {
-    setCart([]);
+  // ── B2B Cart Ops ───────────────────────────────────────
+  function addToB2BCart(item: B2BCartItem) {
+    setB2BCart((prev) => [...prev, item]);
+    setTimeout(() => searchRef.current?.focus(), 100);
   }
 
-  // ── Totals ─────────────────────────────────────────────
-  const subtotal = cart.reduce((sum, item) => sum + item.line_total, 0);
-  const discountAmount = parseFloat(discountInput) || 0;
-  const total = Math.max(0, Math.round((subtotal - discountAmount) * 100) / 100);
+  function updateB2BQty(itemId: string, quantity: number) {
+    setB2BCart((prev) =>
+      prev.map((item) =>
+        item.id === itemId ? { ...item, quantity } : item
+      )
+    );
+  }
 
-  // ── Checkout ───────────────────────────────────────────
-  async function handleCheckout(paymentMethod: "cash" | "card") {
-    if (cart.length === 0) return;
+  function removeB2BItem(itemId: string) {
+    setB2BCart((prev) => prev.filter((item) => item.id !== itemId));
+  }
 
+  // ── Retail Checkout ────────────────────────────────────
+  const retailSubtotal = retailCart.reduce(
+    (sum, item) => sum + item.line_total,
+    0
+  );
+  const retailDiscount = parseFloat(discountInput) || 0;
+  const retailTotal = Math.max(
+    0,
+    Math.round((retailSubtotal - retailDiscount) * 100) / 100
+  );
+
+  async function handleRetailCheckout(paymentMethod: "cash" | "card") {
+    if (retailCart.length === 0) return;
     setProcessing(true);
     try {
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cart.map((item) => ({
+          items: retailCart.map((item) => ({
             product_id: item.product_id,
             product_name: item.product_name,
             product_image: item.product_image,
@@ -157,34 +272,98 @@ export default function SalesPage() {
             unit_price_try: item.unit_price_try,
           })),
           payment_method: paymentMethod,
-          discount_amount: discountAmount,
+          discount_amount: retailDiscount,
           notes: checkoutNotes.trim() || null,
         }),
       });
-
       const data = await res.json();
-
       if (!res.ok) {
         alert(data.error || "Failed to complete sale");
         setProcessing(false);
         return;
       }
-
-      setCompletedSale(data.sale);
-      setCart([]);
+      setCompletedRetailSale(data.sale);
+      setRetailCart([]);
       setDiscountInput("");
       setCheckoutNotes("");
       setSearchQuery("");
       setSearchResults([]);
-    } catch (err) {
-      console.error("Checkout failed:", err);
+    } catch {
       alert("Something went wrong");
     }
     setProcessing(false);
   }
 
-  // ── Completed Sale Modal ───────────────────────────────
-  if (completedSale) {
+  // ── B2B Checkout ───────────────────────────────────────
+  async function handleB2BCheckout() {
+    if (b2bCart.length === 0 || !selectedFirm) return;
+
+    if (selectedFirm.is_locked) {
+      alert(
+        `${selectedFirm.name} is LOCKED: ${selectedFirm.lock_reason || "Payment issue"}. Cannot create order.`
+      );
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const res = await fetch("/api/b2b-sales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firm_id: selectedFirm.id,
+          firm_name: selectedFirm.name,
+          items: b2bCart.map((item) => ({
+  product_id: item.product_id,
+  product_name: item.product_name,
+  product_image: item.product_image,
+  brand_name: item.brand_name,
+  netsis_code: item.netsis_code,
+  variation_label: item.variation_label,
+  quantity: item.quantity,
+  price_type: item.price_type,
+})),
+          note: b2bNote.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to create order");
+        setProcessing(false);
+        return;
+      }
+      setCompletedB2BSale(data.sale);
+      setB2BCart([]);
+      setB2BNote("");
+      setSelectedFirm(null);
+      setFirmSearch("");
+      setSearchQuery("");
+      setSearchResults([]);
+    } catch {
+      alert("Something went wrong");
+    }
+    setProcessing(false);
+  }
+
+  // ── Firm dropdown filter ───────────────────────────────
+  const filteredFirms = firms.filter((f) =>
+    f.name.toLowerCase().includes(firmSearch.toLowerCase())
+  );
+
+  function selectFirm(firm: Firm) {
+    if (firm.is_locked) {
+      alert(
+        `${firm.name} is LOCKED: ${firm.lock_reason || "Payment issue"}. You cannot create orders for this firm.`
+      );
+      return;
+    }
+    setSelectedFirm(firm);
+    setFirmSearch(firm.name);
+    setShowFirmDropdown(false);
+  }
+
+  // ── Completed Sale Screens ─────────────────────────────
+  if (completedRetailSale) {
     return (
       <div className="max-w-md mx-auto py-12">
         <div className="card p-8 text-center">
@@ -195,66 +374,107 @@ export default function SalesPage() {
             Sale Complete!
           </h2>
           <p className="text-sm text-hub-secondary mb-6">
-            Sale #{completedSale.sale_number}
+            Sale #{completedRetailSale.sale_number}
           </p>
-
           <div className="bg-hub-bg/50 rounded-xl p-4 space-y-2 mb-6 text-left">
             <div className="flex justify-between text-sm">
-              <span className="text-hub-secondary">Subtotal</span>
-              <span className="text-hub-primary font-medium">
-                ₺{Number(completedSale.subtotal).toFixed(2)}
-              </span>
-            </div>
-            {Number(completedSale.discount_amount) > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-hub-secondary">Discount</span>
-                <span className="text-hub-error font-medium">
-                  -₺{Number(completedSale.discount_amount).toFixed(2)}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between text-base pt-2 border-t border-hub-border/30">
-              <span className="font-semibold text-hub-primary">Total</span>
+              <span className="text-hub-secondary">Total</span>
               <span className="font-bold text-hub-accent">
-                ₺{Number(completedSale.total).toFixed(2)}
+                ₺{Number(completedRetailSale.total).toFixed(2)}
               </span>
             </div>
-            <div className="flex justify-between text-xs pt-1">
+            <div className="flex justify-between text-xs">
               <span className="text-hub-muted">Payment</span>
               <span className="text-hub-primary font-medium capitalize">
-                {completedSale.payment_method === "cash" ? "💵 Cash" : "💳 Card"}
+                {completedRetailSale.payment_method === "cash"
+                  ? "💵 Cash"
+                  : "💳 Card"}
               </span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-hub-muted">Employee</span>
               <span className="text-hub-primary font-medium">
-                {completedSale.employee_username}
+                {completedRetailSale.employee_username}
               </span>
             </div>
           </div>
+          <button
+            onClick={() => setCompletedRetailSale(null)}
+            className="btn-primary w-full"
+          >
+            New Sale
+          </button>
+        </div>
+      </div>
+    );
+  }
 
+  if (completedB2BSale) {
+    return (
+      <div className="max-w-md mx-auto py-12">
+        <div className="card p-8 text-center">
+          <div className="w-16 h-16 rounded-full bg-hub-success/10 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 className="w-8 h-8 text-hub-success" />
+          </div>
+          <h2 className="text-xl font-semibold text-hub-primary mb-1">
+            B2B Order Created!
+          </h2>
+          <p className="text-sm text-hub-secondary mb-1">
+            Order #{completedB2BSale.sale_number}
+          </p>
+          <p className="text-sm font-medium text-hub-accent mb-6">
+            {completedB2BSale.firm_name}
+          </p>
+          <div className="bg-hub-bg/50 rounded-xl p-4 space-y-2 mb-6 text-left">
+            <div className="flex justify-between text-xs">
+              <span className="text-hub-muted">Items</span>
+              <span className="text-hub-primary font-medium">
+                {completedB2BSale.items?.length || 0} product
+                {(completedB2BSale.items?.length || 0) !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-hub-muted">Employee</span>
+              <span className="text-hub-primary font-medium">
+                {completedB2BSale.employee_username}
+              </span>
+            </div>
+            {completedB2BSale.note && (
+              <div className="flex justify-between text-xs">
+                <span className="text-hub-muted">Note</span>
+                <span className="text-hub-primary font-medium">
+                  {completedB2BSale.note}
+                </span>
+              </div>
+            )}
+          </div>
           <div className="flex gap-3">
             <button
-              onClick={() => setCompletedSale(null)}
+              onClick={() => setCompletedB2BSale(null)}
               className="btn-primary flex-1"
             >
-              New Sale
+              New Order
             </button>
-            <Link
-              href="/dashboard/reports"
-              className="btn-secondary flex-1 flex items-center justify-center"
+            <button
+              onClick={() => {
+                // Mock irsaliye — Part 6E
+                setIrsaliyeSale(completedB2BSale);
+              }}
+              className="btn-secondary flex-1 flex items-center justify-center gap-2"
             >
-              Reports
-            </Link>
+              <Share2 className="w-4 h-4" />
+              İrsaliye
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
+  // ── Main Layout ────────────────────────────────────────
   return (
     <div className="space-y-5">
-      {/* Header */}
+      {/* Header with Mode Switch */}
       <div className="flex items-center gap-4">
         <Link
           href="/dashboard"
@@ -262,20 +482,136 @@ export default function SalesPage() {
         >
           <ArrowLeft className="w-5 h-5" />
         </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-hub-primary">
-            Retail Sale
-          </h1>
-          <p className="text-sm text-hub-secondary mt-0.5">
-            Search products or scan QR codes
-          </p>
+
+        {/* Mode Toggle */}
+        <div className="flex items-center bg-hub-bg rounded-xl p-1 gap-1">
+          <button
+            onClick={() => switchMode("retail")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              mode === "retail"
+                ? "bg-white text-hub-accent shadow-hub"
+                : "text-hub-secondary hover:text-hub-primary"
+            }`}
+          >
+            <ShoppingBag className="w-4 h-4" />
+            Retail
+          </button>
+          <button
+            onClick={() => switchMode("b2b")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              mode === "b2b"
+                ? "bg-white text-hub-accent shadow-hub"
+                : "text-hub-secondary hover:text-hub-primary"
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            B2B
+          </button>
         </div>
+
+        <div className="flex-1" />
+
+        <Link
+          href="/dashboard/sales/history"
+          className="btn-secondary flex items-center gap-2 text-sm py-2"
+        >
+          <Search className="w-3.5 h-3.5" />
+          History
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         {/* ── LEFT: Search + Results ──────────────────── */}
         <div className="lg:col-span-3 space-y-4">
-          {/* Search Bar */}
+          {/* Firm Selector (B2B only) */}
+          {mode === "b2b" && (
+            <div className="card p-4">
+              <label className="label-base">Firm *</label>
+              <div className="relative">
+                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-hub-muted" />
+                <input
+                  type="text"
+                  value={firmSearch}
+                  onChange={(e) => {
+                    setFirmSearch(e.target.value);
+                    setShowFirmDropdown(true);
+                    if (selectedFirm && e.target.value !== selectedFirm.name) {
+                      setSelectedFirm(null);
+                    }
+                  }}
+                  onFocus={() => setShowFirmDropdown(true)}
+                  className="input-base pl-11"
+                  placeholder="Type firm name..."
+                />
+                {selectedFirm && (
+                  <button
+                    onClick={() => {
+                      setSelectedFirm(null);
+                      setFirmSearch("");
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-hub-muted hover:text-hub-primary"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* Dropdown */}
+                {showFirmDropdown && firmSearch && !selectedFirm && (
+                  <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white rounded-xl border border-hub-border/50 shadow-hub-lg max-h-[200px] overflow-y-auto">
+                    {filteredFirms.length === 0 ? (
+                      <div className="p-3 text-sm text-hub-muted text-center">
+                        No firms found
+                      </div>
+                    ) : (
+                      filteredFirms.map((firm) => (
+                        <button
+                          key={firm.id}
+                          onClick={() => selectFirm(firm)}
+                          className={`w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-hub-bg/50 transition-colors ${
+                            firm.is_locked ? "opacity-50" : ""
+                          }`}
+                        >
+                          {firm.is_locked ? (
+                            <Lock className="w-4 h-4 text-hub-error flex-shrink-0" />
+                          ) : (
+                            <Building2 className="w-4 h-4 text-hub-accent flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className={`text-sm font-medium truncate ${
+                                firm.is_locked
+                                  ? "text-hub-error/70"
+                                  : "text-hub-primary"
+                              }`}
+                            >
+                              {firm.name}
+                            </p>
+                            {firm.is_locked && (
+                              <p className="text-[10px] text-hub-error flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                {firm.lock_reason || "Locked"}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {selectedFirm && (
+                <div className="mt-2 flex items-center gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-hub-success" />
+                  <span className="text-xs text-hub-success font-medium">
+                    {selectedFirm.name} selected
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Product Search */}
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-hub-muted" />
             <input
@@ -285,7 +621,7 @@ export default function SalesPage() {
               onChange={(e) => handleSearchChange(e.target.value)}
               className="input-base pl-11 pr-10"
               placeholder="Search products by name..."
-              autoFocus
+              autoFocus={mode === "retail"}
             />
             {searchQuery && (
               <button
@@ -301,7 +637,7 @@ export default function SalesPage() {
             )}
           </div>
 
-          {/* Search Results */}
+          {/* Results */}
           {searching && (
             <div className="flex justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin text-hub-muted" />
@@ -313,7 +649,11 @@ export default function SalesPage() {
               {searchResults.map((product) => (
                 <button
                   key={product.id}
-                  onClick={() => setSelectedProduct(product)}
+                  onClick={() =>
+                    mode === "b2b"
+                      ? setSelectedB2BProduct(product)
+                      : setSelectedProduct(product)
+                  }
                   className="card p-4 text-left hover:shadow-hub-md hover:border-hub-accent/30 transition-all duration-200 group"
                 >
                   <div className="flex items-center gap-3">
@@ -366,121 +706,162 @@ export default function SalesPage() {
               </div>
             )}
 
-          {!searching && searchQuery.length < 2 && cart.length === 0 && (
-            <div className="card p-12 text-center">
-              <Search className="w-10 h-10 text-hub-muted/20 mx-auto mb-3" />
-              <p className="text-hub-secondary text-sm">
-                Start typing to search products
-              </p>
-              <p className="text-[11px] text-hub-muted mt-1">
-                Or scan a product QR code with your camera
-              </p>
-            </div>
-          )}
+          {!searching &&
+            searchQuery.length < 2 &&
+            retailCart.length === 0 &&
+            b2bCart.length === 0 && (
+              <div className="card p-12 text-center">
+                <Search className="w-10 h-10 text-hub-muted/20 mx-auto mb-3" />
+                <p className="text-hub-secondary text-sm">
+                  {mode === "b2b"
+                    ? "Select a firm above, then search products"
+                    : "Start typing to search products"}
+                </p>
+              </div>
+            )}
         </div>
 
         {/* ── RIGHT: Cart + Checkout ─────────────────── */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Cart */}
-          <Cart
-            items={cart}
-            onUpdateQuantity={updateCartQuantity}
-            onRemoveItem={removeCartItem}
-            onClearCart={clearCart}
-          />
-
-          {/* Checkout Panel */}
-          {cart.length > 0 && (
-            <div className="card p-5 space-y-4">
-              {/* Totals */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-hub-secondary">Subtotal</span>
-                  <span className="font-medium text-hub-primary">
-                    ₺{subtotal.toFixed(2)}
-                  </span>
-                </div>
-
-                {/* Discount */}
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-hub-secondary flex-shrink-0">
-                    Discount
-                  </span>
-                  <div className="flex-1 relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-hub-muted">
-                      ₺
-                    </span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={discountInput}
-                      onChange={(e) => setDiscountInput(e.target.value)}
-                      className="w-full pl-7 pr-3 py-1.5 rounded-lg border border-hub-border/50 bg-hub-bg/30 text-sm text-hub-primary text-right focus:outline-none focus:ring-1 focus:ring-hub-accent/20"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-
-                {/* Total */}
-                <div className="pt-2 border-t border-hub-border/30 flex justify-between items-center">
-                  <span className="text-base font-semibold text-hub-primary">
-                    Total
-                  </span>
-                  <span className="text-xl font-bold text-hub-accent">
-                    ₺{total.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <input
-                type="text"
-                value={checkoutNotes}
-                onChange={(e) => setCheckoutNotes(e.target.value)}
-                className="input-base text-sm py-2"
-                placeholder="Sale notes (optional)"
+          {mode === "retail" ? (
+            <>
+              <Cart
+                items={retailCart}
+                onUpdateQuantity={updateRetailQty}
+                onRemoveItem={removeRetailItem}
+                onClearCart={() => setRetailCart([])}
               />
 
-              {/* Payment Buttons */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => handleCheckout("cash")}
-                  disabled={processing || cart.length === 0}
-                  className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-hub-success text-white font-medium text-sm hover:bg-hub-success/90 transition-all disabled:opacity-50 active:scale-[0.98]"
-                >
-                  <Banknote className="w-4 h-4" />
-                  Cash
-                </button>
-                <button
-                  onClick={() => handleCheckout("card")}
-                  disabled={processing || cart.length === 0}
-                  className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-[0.98]"
-                >
-                  <CreditCard className="w-4 h-4" />
-                  Card
-                </button>
-              </div>
-
-              {processing && (
-                <div className="flex items-center justify-center gap-2 text-sm text-hub-secondary">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Processing sale...
+              {retailCart.length > 0 && (
+                <div className="card p-5 space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-hub-secondary">Subtotal</span>
+                      <span className="font-medium text-hub-primary">
+                        ₺{retailSubtotal.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-hub-secondary flex-shrink-0">
+                        Discount
+                      </span>
+                      <div className="flex-1 relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-hub-muted">
+                          ₺
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={discountInput}
+                          onChange={(e) => setDiscountInput(e.target.value)}
+                          className="w-full pl-7 pr-3 py-1.5 rounded-lg border border-hub-border/50 bg-hub-bg/30 text-sm text-hub-primary text-right focus:outline-none focus:ring-1 focus:ring-hub-accent/20"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-hub-border/30 flex justify-between items-center">
+                      <span className="text-base font-semibold text-hub-primary">
+                        Total
+                      </span>
+                      <span className="text-xl font-bold text-hub-accent">
+                        ₺{retailTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={checkoutNotes}
+                    onChange={(e) => setCheckoutNotes(e.target.value)}
+                    className="input-base text-sm py-2"
+                    placeholder="Sale notes (optional)"
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => handleRetailCheckout("cash")}
+                      disabled={processing}
+                      className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-hub-success text-white font-medium text-sm hover:bg-hub-success/90 transition-all disabled:opacity-50 active:scale-[0.98]"
+                    >
+                      <Banknote className="w-4 h-4" />
+                      Cash
+                    </button>
+                    <button
+                      onClick={() => handleRetailCheckout("card")}
+                      disabled={processing}
+                      className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-[0.98]"
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      Card
+                    </button>
+                  </div>
+                  {processing && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-hub-secondary">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
+          ) : (
+            <>
+              <B2BCart
+                items={b2bCart}
+                onUpdateQuantity={updateB2BQty}
+                onRemoveItem={removeB2BItem}
+                onClearCart={() => setB2BCart([])}
+              />
+
+              {b2bCart.length > 0 && (
+                <div className="card p-5 space-y-4">
+                  <input
+                    type="text"
+                    value={b2bNote}
+                    onChange={(e) => setB2BNote(e.target.value)}
+                    className="input-base text-sm"
+                    placeholder="Note (employee name, section, etc.)"
+                  />
+                  <button
+                    onClick={handleB2BCheckout}
+                    disabled={processing || !selectedFirm}
+                    className="btn-primary w-full flex items-center justify-center gap-2"
+                  >
+                    {processing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Building2 className="w-4 h-4" />
+                    )}
+                    {processing
+                      ? "Creating..."
+                      : !selectedFirm
+                      ? "Select a Firm First"
+                      : `Create Order for ${selectedFirm.name}`}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {/* Add to Cart Modal */}
+      {/* Modals */}
       <AddToCartModal
         product={selectedProduct}
         calcSalePrice={calcSalePrice}
         getExchangeRate={getExchangeRate}
         onClose={() => setSelectedProduct(null)}
-        onAddToCart={addToCart}
+        onAddToCart={addToRetailCart}
       />
+
+      <B2BAddToCartModal
+        product={selectedB2BProduct}
+        onClose={() => setSelectedB2BProduct(null)}
+        onAddToCart={addToB2BCart}
+      />
+      <MockIrsaliye
+  sale={irsaliyeSale}
+  onClose={() => setIrsaliyeSale(null)}
+/>
     </div>
   );
 }

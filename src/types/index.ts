@@ -202,6 +202,7 @@ export interface CartItem {
   product_name: string;
   product_image: string | null;
   brand_name: string | null;
+  netsis_code: string | null;
   variation_label: string | null;
   quantity: number;
   unit_price: number;
@@ -210,4 +211,67 @@ export interface CartItem {
   exchange_rate: number;
   unit_price_try: number;
   line_total: number;
+}
+
+export interface Firm {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  tax_number: string | null;
+  tax_office: string | null;
+  is_locked: boolean;
+  lock_reason: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface B2BSale {
+  id: string;
+  sale_number: number;
+  firm_id: string;
+  firm_name: string;
+  employee_id: string;
+  employee_username: string;
+  note: string | null;
+  status: "active" | "returned" | "partially_returned";
+  is_processed: boolean;
+  processed_at: string | null;
+  processed_by: string | null;
+  created_at: string;
+  updated_at: string;
+  items?: B2BSaleItem[];
+}
+
+export interface B2BSaleItem {
+  id: string;
+  sale_id: string;
+  product_id: string;
+  product_name: string;
+  product_image: string | null;
+  brand_name: string | null;
+  netsis_code: string | null;
+  variation_label: string | null;
+  quantity: number;
+  price_type: "price1" | "price2";
+  returned_quantity: number;
+  is_swap: boolean;
+  swap_source_item_id: string | null;
+  swap_note: string | null;
+  created_at: string;
+}
+
+export interface B2BCartItem {
+  id: string;
+  product_id: string;
+  product_name: string;
+  product_image: string | null;
+  brand_name: string | null;
+  netsis_code: string | null;
+  variation_label: string | null;
+  quantity: number;
+  price_type: "price1" | "price2";
 }
