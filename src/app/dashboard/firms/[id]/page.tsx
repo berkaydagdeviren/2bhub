@@ -603,10 +603,14 @@ export default function FirmDetailPage() {
         onClose={() => setSwappingItem(null)}
         onCompleted={fetchData}
       />
+      {irsaliyeSale && (
+        <MockIrsaliye
+          sale={irsaliyeSale}
+          onClose={() => setIrsaliyeSale(null)}
+        />
+      )}
     </div>
+    
   );
-  <MockIrsaliye
-  sale={irsaliyeSale}
-  onClose={() => setIrsaliyeSale(null)}
-/>
+
 }
