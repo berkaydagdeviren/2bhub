@@ -10,6 +10,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "2B Hub — Operational Hub",
   description: "Hardware company operational management system",
+  viewport: "width=device-width, initial-scale=1",
 };
 
 export default function RootLayout({

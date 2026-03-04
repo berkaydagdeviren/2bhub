@@ -190,11 +190,11 @@ export default async function PublicProductPage({ params }: PageProps) {
                       Varyasyon
                     </th>
                     <th className="text-right py-2 px-2 text-[10px] font-semibold text-[#7A7468] uppercase">
-                      Fiyat{has_price2 ? " 1" : ""}
+                      {has_price2 ? "Siyah" : "Fiyat"}
                     </th>
                     {has_price2 && (
                       <th className="text-right py-2 pl-2 text-[10px] font-semibold text-[#7A7468] uppercase">
-                        {price2_label}
+                        {price2_label || "Beyaz/Galvaniz"}
                       </th>
                     )}
                   </tr>
@@ -267,7 +267,7 @@ export default async function PublicProductPage({ params }: PageProps) {
           /* Single product price */
           <div className="bg-white rounded-2xl border border-[#E5E0D8] p-5 space-y-3">
             <p className="text-[10px] font-semibold text-[#7A7468] uppercase tracking-wider">
-              Satış Fiyatı
+              {has_price2 ? "Siyah" : "Satış Fiyatı"}
             </p>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-bold text-[#8B7355]">
@@ -280,7 +280,7 @@ export default async function PublicProductPage({ params }: PageProps) {
             {has_price2 && productPrice2TRY > 0 && (
               <div className="pt-2 border-t border-[#E5E0D8]/50 flex items-baseline gap-2">
                 <span className="text-xs text-[#7A7468] font-medium">
-                  {price2_label}:
+                  {price2_label || "Beyaz/Galvaniz"}:
                 </span>
                 <span className="text-xl font-semibold text-[#7A7468]">
                   ₺{productPrice2TRY.toFixed(2)}

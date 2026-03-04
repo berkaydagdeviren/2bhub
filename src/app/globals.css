@@ -6,10 +6,13 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
 
   body {
     @apply bg-hub-bg text-hub-primary;
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
   ::selection {
@@ -37,6 +40,7 @@
            text-hub-primary placeholder:text-hub-muted
            focus:outline-none focus:ring-2 focus:ring-hub-accent/20 focus:border-hub-accent
            transition-all duration-200;
+    font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
   }
 
   .label-base {
