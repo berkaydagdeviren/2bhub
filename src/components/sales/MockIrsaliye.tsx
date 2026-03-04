@@ -98,6 +98,7 @@ export default function MockIrsaliye({ sale, onClose, onShared }: MockIrsaliyePr
   }
 
   function generatePrintHTML(): string {
+    if (!sale) return "";
     let rows = "";
     items.forEach((item, i) => {
       const activeQty = Number(item.quantity) - Number(item.returned_quantity);
