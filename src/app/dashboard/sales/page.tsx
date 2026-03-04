@@ -668,20 +668,22 @@ export default function SalesPage() {
 
         <div className="flex-1" />
 
-        <Link
-          href="/dashboard/sales/history"
-          className="btn-secondary flex items-center gap-2 text-sm py-2"
-        >
-          <Search className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Retail</span>
-        </Link>
-        <Link
-          href="/dashboard/sales/b2b-history"
-          className="btn-secondary flex items-center gap-2 text-sm py-2"
-        >
-          <Building2 className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">B2B</span>
-        </Link>
+        <div className="flex flex-col gap-1">
+          <Link
+            href="/dashboard/sales/history"
+            className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
+          >
+            <Search className="w-3 h-3" />
+            Retail
+          </Link>
+          <Link
+            href="/dashboard/sales/b2b-history"
+            className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-3"
+          >
+            <Building2 className="w-3 h-3" />
+            B2B
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">

@@ -90,8 +90,9 @@ export default function B2BReturnModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white rounded-2xl shadow-hub-lg z-[90] p-6 space-y-5"
+            className="fixed inset-0 z-[90] flex items-center justify-center px-4"
           >
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-hub-lg p-6 space-y-5 max-h-[85vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-hub-primary">
@@ -183,6 +184,7 @@ export default function B2BReturnModal({
               )}
               {processing ? "Processing..." : `Return ${returnQty || 0} pcs`}
             </button>
+          </div>
           </motion.div>
         </>
       )}
