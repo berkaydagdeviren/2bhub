@@ -36,16 +36,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Search by short code (first 8 hex chars of UUID without hyphens)
+    // Uses UUID range query — avoids ILIKE on uuid column which needs explicit cast
     if (shortId && shortId.length >= 6) {
-      // Reconstruct prefix: "xxxxxxxx" → "xxxxxxxx-%" for ILIKE on UUID column
-      const hex = shortId.replace(/-/g, "").toLowerCase().slice(0, 8);
-      // UUID format: 8-4-4-4-12 — prefix the first 8 chars
-      const prefix = hex.slice(0, 8);
+      const hex = shortId.replace(/-/g, "").toLowerCase().padEnd(8, "0").slice(0, 8);
+      const lowerBound = `${hex}-0000-0000-0000-000000000000`;
+      const upperBound = `${hex}-ffff-ffff-ffff-ffffffffffff`;
+
       const { data: shortResults } = await supabaseAdmin
         .from("products")
         .select(PRODUCT_SELECT)
         .eq("is_active", true)
-        .ilike("id", prefix + "%")
+        .gte("id", lowerBound)
+        .lte("id", upperBound)
         .limit(5);
 
       return NextResponse.json({

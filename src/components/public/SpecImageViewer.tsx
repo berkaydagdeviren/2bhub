@@ -30,11 +30,20 @@ export default function SpecImageViewer({ images }: { images: SpecImage[] }) {
   }
 
   function handleTouchStart(e: React.TouchEvent) {
+    if (e.touches.length !== 1) return; // ignore pinch
     setTouchStart(e.touches[0].clientX);
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (e.touches.length > 1) {
+      // second finger joined — cancel swipe tracking
+      setTouchStart(null);
+    }
   }
 
   function handleTouchEnd(e: React.TouchEvent) {
     if (touchStart === null) return;
+    if (e.changedTouches.length !== 1) return; // ignore multi-finger lift
     const diff = touchStart - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 40) {
       if (diff > 0) goNext();
@@ -75,6 +84,7 @@ export default function SpecImageViewer({ images }: { images: SpecImage[] }) {
         <div
           className="fixed inset-0 z-50 bg-black flex flex-col"
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
           {/* Top bar */}

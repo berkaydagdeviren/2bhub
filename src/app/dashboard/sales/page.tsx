@@ -132,7 +132,11 @@ export default function SalesPage() {
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+    if (
+      typeof window !== "undefined" &&
+      "BarcodeDetector" in window &&
+      window.isSecureContext
+    ) {
       setHasBarcodeDetector(true);
     }
   }, []);
