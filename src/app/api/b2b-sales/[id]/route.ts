@@ -139,12 +139,12 @@ export async function PUT(
         .update({ returned_quantity: newReturnQty })
         .eq("id", item_id);
 
-      // Check all items status
+      // Check all items status — include swap items so an active swap
+      // replacement prevents the sale from being marked fully "returned"
       const { data: allItems } = await supabaseAdmin
         .from("b2b_sale_items")
         .select("quantity, returned_quantity")
-        .eq("sale_id", params.id)
-        .eq("is_swap", false);
+        .eq("sale_id", params.id);
 
       let allReturned = true;
       let anyReturned = false;

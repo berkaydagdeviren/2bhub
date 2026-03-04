@@ -64,7 +64,6 @@ export async function POST(
 
     // Upload to Supabase Storage
     const fileName = params.id + "/" + Date.now() + "." + ext;
-    console.log(fileName)
     const { error: uploadErr } = await supabaseAdmin.storage
       .from("spec-images")
       .upload(fileName, buffer, {
@@ -80,7 +79,6 @@ export async function POST(
       .getPublicUrl(fileName);
 
     const imageUrl = urlData.publicUrl;
-    console.log(imageUrl, "imageUrl")
     // Get current count for sort order
     const { count } = await supabaseAdmin
       .from("product_spec_images")

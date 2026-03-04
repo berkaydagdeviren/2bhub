@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, Package, Plus, Loader2, Search } from "lucide-react";
+import {
+  ArrowLeft,
+  Package,
+  Plus,
+  Loader2,
+  Search,
+  LayoutGrid,
+  List,
+  ArrowRight,
+} from "lucide-react";
 import Link from "next/link";
 import type { AuthUser, Product } from "@/types";
 import ProductForm from "@/components/products/ProductForm";
@@ -12,6 +21,10 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
+    if (typeof window === "undefined") return "grid";
+    return (localStorage.getItem("products-view") as "grid" | "list") || "grid";
+  });
 
   useEffect(() => {
     fetchUser();
@@ -57,6 +70,11 @@ export default function ProductsPage() {
     fetchProducts();
   }
 
+  function toggleView(mode: "grid" | "list") {
+    setViewMode(mode);
+    localStorage.setItem("products-view", mode);
+  }
+
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -95,17 +113,44 @@ export default function ProductsPage() {
         </button>
       </div>
 
-      {/* Search */}
+      {/* Search + view toggle */}
       {products.length > 0 && (
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-hub-muted" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input-base pl-11"
-            placeholder="Search products..."
-          />
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-hub-muted" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input-base pl-11"
+              placeholder="Search products..."
+            />
+          </div>
+          {/* View toggle */}
+          <div className="flex items-center border border-hub-border rounded-xl overflow-hidden flex-shrink-0">
+            <button
+              onClick={() => toggleView("grid")}
+              className={`p-2.5 transition-colors ${
+                viewMode === "grid"
+                  ? "bg-hub-accent/10 text-hub-accent"
+                  : "text-hub-secondary hover:text-hub-primary hover:bg-hub-bg/60"
+              }`}
+              title="Grid view"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => toggleView("list")}
+              className={`p-2.5 border-l border-hub-border transition-colors ${
+                viewMode === "list"
+                  ? "bg-hub-accent/10 text-hub-accent"
+                  : "text-hub-secondary hover:text-hub-primary hover:bg-hub-bg/60"
+              }`}
+              title="List view"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -131,7 +176,8 @@ export default function ProductsPage() {
             </button>
           )}
         </div>
-      ) : (
+      ) : viewMode === "grid" ? (
+        /* ── Grid View ── */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((product) => (
             <Link
@@ -173,41 +219,145 @@ export default function ProductsPage() {
               </div>
 
               {/* Price */}
-<div className="mt-2 pt-2 border-t border-hub-border/30">
-  {(() => {
-    const { price, currency, symbol, hasVariationPrices } =
-      calculateSalePrice(product);
+              <div className="mt-2 pt-2 border-t border-hub-border/30">
+                {(() => {
+                  const { price, currency, symbol, hasVariationPrices } =
+                    calculateSalePrice(product);
 
-    if (hasVariationPrices && price === 0) {
-      return (
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-hub-secondary">Pricing</span>
-          <span className="text-[11px] font-medium text-hub-accent">
-            Per variation
-          </span>
-        </div>
-      );
-    }
+                  if (hasVariationPrices && price === 0) {
+                    return (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-hub-secondary">Pricing</span>
+                        <span className="text-[11px] font-medium text-hub-accent">
+                          Per variation
+                        </span>
+                      </div>
+                    );
+                  }
 
-    return (
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-hub-secondary">Sale Price</span>
-        <div className="text-right">
-          <span className="text-sm font-semibold text-hub-primary">
-            {symbol}{price.toFixed(2)}
-          </span>
-          {currency !== "TRY" && (
-            <span className="text-[10px] text-hub-muted block">
-              {currency}
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  })()}
-</div>
+                  return (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-hub-secondary">Sale Price</span>
+                      <div className="text-right">
+                        <span className="text-sm font-semibold text-hub-primary">
+                          {symbol}{price.toFixed(2)}
+                        </span>
+                        {currency !== "TRY" && (
+                          <span className="text-[10px] text-hub-muted block">
+                            {currency}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             </Link>
           ))}
+        </div>
+      ) : (
+        /* ── List View ── */
+        <div className="card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-hub-bg/60 border-b border-hub-border/40">
+                <th className="text-left px-4 py-2.5 text-[10px] font-bold text-hub-secondary uppercase tracking-[0.8px] w-10">
+                  #
+                </th>
+                <th className="text-left px-4 py-2.5 text-[10px] font-bold text-hub-secondary uppercase tracking-[0.8px] w-12">
+                </th>
+                <th className="text-left px-4 py-2.5 text-[10px] font-bold text-hub-secondary uppercase tracking-[0.8px]">
+                  Ürün Adı
+                </th>
+                <th className="text-left px-4 py-2.5 text-[10px] font-bold text-hub-secondary uppercase tracking-[0.8px] w-28 hidden sm:table-cell">
+                  Marka
+                </th>
+                <th className="text-left px-4 py-2.5 text-[10px] font-bold text-hub-secondary uppercase tracking-[0.8px] w-32 hidden md:table-cell">
+                  Netsis Kodu
+                </th>
+                <th className="text-right px-4 py-2.5 text-[10px] font-bold text-hub-secondary uppercase tracking-[0.8px] w-28">
+                  Fiyat
+                </th>
+                <th className="w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((product, idx) => {
+                const { price, symbol, hasVariationPrices } = calculateSalePrice(product);
+                const variationCount = Array.isArray(product.variations)
+                  ? product.variations.length
+                  : 0;
+                return (
+                  <tr
+                    key={product.id}
+                    className="border-b border-hub-border/20 last:border-0 hover:bg-hub-bg/30 transition-colors"
+                  >
+                    <td className="px-4 py-2.5 text-xs text-hub-muted">
+                      {idx + 1}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="w-9 h-9 rounded-lg bg-hub-bg overflow-hidden flex-shrink-0 flex items-center justify-center">
+                        {product.image_url ? (
+                          <img
+                            src={product.image_url}
+                            alt={product.name}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <Package className="w-4 h-4 text-hub-muted/40" />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-hub-primary">
+                          {product.name}
+                        </span>
+                        {variationCount > 0 && (
+                          <span className="text-[9px] font-semibold text-hub-secondary bg-hub-border/50 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                            {variationCount} var.
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-hub-secondary hidden sm:table-cell">
+                      {product.brand?.name || (
+                        <span className="text-hub-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 hidden md:table-cell">
+                      {product.netsis_code ? (
+                        <span className="text-xs font-mono text-hub-accent">
+                          {product.netsis_code}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-hub-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      {hasVariationPrices && price === 0 ? (
+                        <span className="text-[11px] font-medium text-hub-accent">
+                          Per var.
+                        </span>
+                      ) : (
+                        <span className="text-sm font-semibold text-hub-primary">
+                          {symbol}{price.toFixed(2)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <Link
+                        href={`/dashboard/products/${product.id}`}
+                        className="text-hub-secondary hover:text-hub-primary transition-colors"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -232,7 +382,6 @@ function calculateSalePrice(product: Product): {
 
   const symbols: Record<string, string> = { TRY: "₺", USD: "$", EUR: "€" };
 
-  // Check if product has variations (from the joined data)
   const hasVariationPrices =
     Array.isArray(product.variations) &&
     product.variations.some((v) => v.has_custom_price);

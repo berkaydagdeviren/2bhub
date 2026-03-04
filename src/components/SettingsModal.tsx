@@ -2,8 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Loader2, Check, DollarSign, Euro } from "lucide-react";
+import { X, Loader2, Check, DollarSign, Euro, QrCode, Trash2, Printer } from "lucide-react";
 import type { CurrencyRates } from "@/types";
+
+interface QrListItem {
+  product_id: string;
+  product_name: string;
+}
 
 interface SettingsModalProps {
   open: boolean;
@@ -16,22 +21,30 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const [qrList, setQrList] = useState<QrListItem[]>([]);
+  const [printingQr, setPrintingQr] = useState(false);
+
   const fetchSettings = useCallback(async () => {
-  setLoading(true);
-  try {
-    const res = await fetch("/api/settings", {
-      cache: "no-store",
-      headers: { "Cache-Control": "no-cache" },
-    });
-    const data = await res.json();
-    if (data.settings?.currency_rates) {
-      setRates(data.settings.currency_rates as CurrencyRates);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/settings", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
+      const data = await res.json();
+      if (data.settings?.currency_rates) {
+        setRates(data.settings.currency_rates as CurrencyRates);
+      }
+      if (Array.isArray(data.settings?.qr_print_list)) {
+        setQrList(data.settings.qr_print_list as QrListItem[]);
+      } else {
+        setQrList([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch settings:", err);
     }
-  } catch (err) {
-    console.error("Failed to fetch settings:", err);
-  }
-  setLoading(false);
-}, []);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -67,6 +80,86 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     const num = val === "" ? 0 : parseFloat(val);
     if (isNaN(num)) return;
     setRates((prev) => ({ ...prev, [currency]: num }));
+  }
+
+  async function saveQrList(newList: QrListItem[]) {
+    setQrList(newList);
+    try {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "qr_print_list", value: newList }),
+      });
+    } catch (err) {
+      console.error("Failed to save QR list:", err);
+    }
+  }
+
+  async function removeFromQrList(productId: string) {
+    await saveQrList(qrList.filter((item) => item.product_id !== productId));
+  }
+
+  async function handlePrintQRList() {
+    if (qrList.length === 0) return;
+    setPrintingQr(true);
+    try {
+      const qrDataUrls: Array<{ name: string; dataUrl: string; shortCode: string }> = [];
+
+      for (const item of qrList) {
+        try {
+          const res = await fetch(`/api/products/${item.product_id}/qr`, {
+            cache: "no-store",
+          });
+          const data = await res.json();
+          if (data.qr_data_url) {
+            const shortCode = item.product_id.replace(/-/g, "").slice(0, 8).toUpperCase();
+            qrDataUrls.push({ name: item.product_name, dataUrl: data.qr_data_url, shortCode });
+          }
+        } catch {
+          // skip failed items
+        }
+      }
+
+      if (qrDataUrls.length === 0) return;
+
+      const cardsHtml = qrDataUrls
+        .map(
+          (item) => `
+          <div class="card">
+            <img src="${item.dataUrl}" alt="QR" />
+            <p class="name">${item.name}</p>
+            <p class="code">${item.shortCode}</p>
+          </div>`
+        )
+        .join("");
+
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) return;
+
+      printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>QR Baskı Listesi</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: white; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; }
+    .card { border: 1px solid #E5E0D8; border-radius: 8px; padding: 6mm; text-align: center; break-inside: avoid; }
+    .card img { width: 100%; display: block; }
+    .card .name { font-size: 9pt; margin-top: 3mm; word-break: break-word; color: #1A1A1A; font-weight: 600; }
+    .card .code { font-size: 9pt; margin-top: 2mm; font-family: monospace; font-weight: 700; color: #8B7355; letter-spacing: 0.08em; background: #F7F5F0; border-radius: 4px; padding: 1mm 2mm; display: inline-block; }
+  </style>
+</head>
+<body>
+  <div class="grid">${cardsHtml}</div>
+  <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>`);
+      printWindow.document.close();
+    } finally {
+      setPrintingQr(false);
+    }
   }
 
   return (
@@ -171,7 +264,64 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                     </div>
                   </div>
 
-                  {/* More settings sections will be added here in future checkpoints */}
+                  {/* QR Print List Section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="label-base flex items-center gap-2">
+                        <QrCode className="w-4 h-4 text-hub-accent" />
+                        QR Baskı Listesi
+                      </h3>
+                      {qrList.length > 0 && (
+                        <span className="text-[10px] font-semibold text-hub-accent bg-hub-accent/10 px-2 py-0.5 rounded-full">
+                          {qrList.length}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-hub-muted mb-4">
+                      Ürün sayfasından listeye eklenen QR kodları burada görünür.
+                    </p>
+
+                    {qrList.length === 0 ? (
+                      <p className="text-xs text-hub-muted text-center py-6 bg-hub-bg/50 rounded-xl">
+                        Listeye ürün eklemek için ürün sayfasına gidin.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 mb-4">
+                        {qrList.map((item) => (
+                          <div
+                            key={item.product_id}
+                            className="flex items-center justify-between p-3 rounded-xl bg-hub-bg/50 border border-hub-border/30"
+                          >
+                            <span className="text-sm text-hub-primary font-medium truncate flex-1 min-w-0 mr-2">
+                              {item.product_name}
+                            </span>
+                            <button
+                              onClick={() => removeFromQrList(item.product_id)}
+                              className="p-1.5 text-hub-muted hover:text-hub-error rounded-lg hover:bg-hub-error/5 transition-colors flex-shrink-0"
+                              title="Listeden çıkar"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {qrList.length > 0 && (
+                      <button
+                        onClick={handlePrintQRList}
+                        disabled={printingQr}
+                        className="btn-secondary w-full flex items-center justify-center gap-2"
+                      >
+                        {printingQr ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Printer className="w-4 h-4" />
+                        )}
+                        {printingQr ? "Hazırlanıyor..." : `Tümünü Yazdır (${qrList.length})`}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

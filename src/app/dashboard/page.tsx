@@ -8,6 +8,7 @@ import {
   Users,
   Truck,
   Tag,
+  ClipboardList,
 } from "lucide-react";
 
 const MODULES = [
@@ -54,11 +55,18 @@ const MODULES = [
     ready: true,
   },
   {
+    title: "B2B Records",
+    description: "Biweekly invoicing records & Netsis entry",
+    icon: ClipboardList,
+    href: "/dashboard/records",
+    ready: true,
+  },
+  {
     title: "Reports",
     description: "Analytics, revenue & performance",
     icon: BarChart3,
     href: "/dashboard/reports",
-    ready: false,
+    ready: true,
   },
 ];
 

@@ -10,12 +10,13 @@ import {
   ToggleLeft,
   ToggleRight,
   Package,
-  Layers,
 } from "lucide-react";
 import type { Product, ProductVariation, CartItem } from "@/types";
+import VariationPicker from "./VariationPicker";
 
 interface AddToCartModalProps {
   product: Product | null;
+  initialVariationLabel?: string | null;
   calcSalePrice: (
     listPrice: number,
     discountPercent: number,
@@ -36,6 +37,7 @@ interface AddToCartModalProps {
 
 export default function AddToCartModal({
   product,
+  initialVariationLabel,
   calcSalePrice,
   getExchangeRate,
   onClose,
@@ -47,13 +49,20 @@ export default function AddToCartModal({
   const [selectedVariation, setSelectedVariation] =
     useState<ProductVariation | null>(null);
 
-  // Reset state when product changes
+  // Reset state when product changes; pre-select matched variation
   useEffect(() => {
     setQuantity(1);
     setQuantityInput("1");
     setUsePrice2(false);
-    setSelectedVariation(null);
-  }, [product?.id]);
+    if (initialVariationLabel && product?.variations) {
+      const match = product.variations.find(
+        (v) => v.variation_label === initialVariationLabel
+      );
+      setSelectedVariation(match ?? null);
+    } else {
+      setSelectedVariation(null);
+    }
+  }, [product?.id, initialVariationLabel]);
 
   if (!product) return null;
   const p = product;
@@ -230,38 +239,11 @@ export default function AddToCartModal({
 
               {/* Variation Picker */}
               {hasVariations && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <Layers className="w-3.5 h-3.5 text-hub-accent" />
-                    <label className="label-base mb-0">
-                      Select Variation *
-                    </label>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto">
-                    {product.variations!.map((v) => {
-                      const isSelected = selectedVariation?.id === v.id;
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => setSelectedVariation(v)}
-                          className={`p-2.5 rounded-xl border text-left text-sm transition-all ${
-                            isSelected
-                              ? "border-hub-accent bg-hub-accent/10 text-hub-accent font-medium"
-                              : "border-hub-border/50 text-hub-secondary hover:border-hub-accent/30"
-                          }`}
-                        >
-                          {v.variation_label}
-                          {v.sku && (
-                            <span className="text-[9px] text-hub-muted block">
-                              {v.sku}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                <VariationPicker
+                  product={product}
+                  selected={selectedVariation}
+                  onChange={setSelectedVariation}
+                />
               )}
 
               {/* Price Type Toggle */}

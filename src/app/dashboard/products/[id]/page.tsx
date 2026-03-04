@@ -20,7 +20,9 @@ import {
   ToggleRight,
   Calculator,
   ExternalLink,
-  ImageIcon
+  ImageIcon,
+  Plus,
+  Minus,
 } from "lucide-react";
 import Link from "next/link";
 import type { Product, ProductVariation, VariationGroup, CurrencyRates } from "@/types";
@@ -57,6 +59,8 @@ export default function ProductDetailPage() {
     product_url: string;
   } | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
+  const [inQrList, setInQrList] = useState(false);
+  const [qrListToggling, setQrListToggling] = useState(false);
   const [specImages, setSpecImages] = useState<Array<{
   id: string;
   image_url: string;
@@ -101,16 +105,50 @@ export default function ProductDetailPage() {
       if (data.settings?.currency_rates) {
         setRates(data.settings.currency_rates as CurrencyRates);
       }
+      if (Array.isArray(data.settings?.qr_print_list)) {
+        const list = data.settings.qr_print_list as Array<{ product_id: string }>;
+        setInQrList(list.some((item) => item.product_id === productId));
+      }
     } catch (err) {
       console.error("Failed to fetch rates:", err);
     }
-  }, []);
+  }, [productId]);
 
   useEffect(() => {
     fetchProduct();
     fetchRates();
     fetchSpecImages();
   }, [fetchProduct, fetchRates, fetchSpecImages]);
+
+  async function toggleQrList() {
+    if (!product) return;
+    setQrListToggling(true);
+    try {
+      const res = await fetch("/api/settings", { cache: "no-store" });
+      const data = await res.json();
+      const current: Array<{ product_id: string; product_name: string }> =
+        Array.isArray(data.settings?.qr_print_list)
+          ? data.settings.qr_print_list
+          : [];
+
+      let updated: Array<{ product_id: string; product_name: string }>;
+      if (inQrList) {
+        updated = current.filter((item) => item.product_id !== productId);
+      } else {
+        updated = [...current, { product_id: productId, product_name: product.name }];
+      }
+
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "qr_print_list", value: updated }),
+      });
+      setInQrList(!inQrList);
+    } catch (err) {
+      console.error("Failed to toggle QR list:", err);
+    }
+    setQrListToggling(false);
+  }
 
   async function generateQR() {
     setQrLoading(true);
@@ -129,6 +167,7 @@ export default function ProductDetailPage() {
   function printQR() {
     if (!qrData || !product) return;
 
+    const shortCode = product.id.replace(/-/g, "").slice(0, 8).toUpperCase();
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
@@ -139,10 +178,10 @@ export default function ProductDetailPage() {
         <title>QR - ${product.name}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
+          body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
             min-height: 100vh;
             font-family: system-ui, sans-serif;
           }
@@ -153,26 +192,38 @@ export default function ProductDetailPage() {
             border-radius: 16px;
             width: 280px;
           }
-          .qr-card img { 
-            width: 200px; 
-            height: 200px; 
-            margin: 0 auto 12px; 
+          .qr-card img {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 12px;
           }
-          .product-name { 
-            font-size: 14px; 
-            font-weight: 700; 
+          .product-name {
+            font-size: 14px;
+            font-weight: 700;
             color: #1A1A1A;
             margin-bottom: 4px;
           }
-          .brand { 
-            font-size: 11px; 
-            color: #7A7468; 
+          .brand {
+            font-size: 11px;
+            color: #7A7468;
+            margin-bottom: 6px;
+          }
+          .short-code {
+            font-size: 12px;
+            font-family: monospace;
+            font-weight: 700;
+            color: #8B7355;
+            letter-spacing: 0.1em;
+            background: #F7F5F0;
+            border-radius: 6px;
+            padding: 3px 8px;
+            margin-top: 4px;
+            display: inline-block;
           }
           .logo {
-            font-size: 10px;
-            color: #8B7355;
-            margin-top: 8px;
-            font-weight: 600;
+            font-size: 9px;
+            color: #B5AFA6;
+            margin-top: 6px;
           }
           @media print {
             body { margin: 0; }
@@ -185,6 +236,7 @@ export default function ProductDetailPage() {
           <img src="${qrData.qr_data_url}" alt="QR" />
           <div class="product-name">${product.name}</div>
           ${product.brand ? '<div class="brand">' + product.brand.name + '</div>' : ''}
+          <div class="short-code">${shortCode}</div>
           <div class="logo">2B Hub</div>
         </div>
         <script>
@@ -639,6 +691,25 @@ export default function ProductDetailPage() {
                   </button>
                 </div>
 
+                <button
+                  onClick={toggleQrList}
+                  disabled={qrListToggling}
+                  className={`w-full flex items-center justify-center gap-2 text-sm py-2 rounded-xl border transition-colors ${
+                    inQrList
+                      ? "border-hub-border text-hub-secondary hover:text-hub-error hover:border-hub-error/30"
+                      : "border-hub-accent/30 text-hub-accent hover:bg-hub-accent/5"
+                  }`}
+                >
+                  {qrListToggling ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : inQrList ? (
+                    <Minus className="w-3.5 h-3.5" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5" />
+                  )}
+                  {inQrList ? "Listeden Çıkar" : "QR Listesine Ekle"}
+                </button>
+
                 <div className="text-center">
                   <a
                     href={qrData.product_url}
@@ -652,7 +723,7 @@ export default function ProductDetailPage() {
                 </div>
               </div>
             ) : (
-              <div className="text-center py-4">
+              <div className="space-y-3 py-2">
                 <button
                   onClick={generateQR}
                   disabled={qrLoading}
@@ -665,7 +736,25 @@ export default function ProductDetailPage() {
                   )}
                   {qrLoading ? "Generating..." : "Generate QR Code"}
                 </button>
-                <p className="text-[11px] text-hub-muted mt-2">
+                <button
+                  onClick={toggleQrList}
+                  disabled={qrListToggling}
+                  className={`w-full flex items-center justify-center gap-2 text-sm py-2 rounded-xl border transition-colors ${
+                    inQrList
+                      ? "border-hub-border text-hub-secondary hover:text-hub-error hover:border-hub-error/30"
+                      : "border-hub-accent/30 text-hub-accent hover:bg-hub-accent/5"
+                  }`}
+                >
+                  {qrListToggling ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : inQrList ? (
+                    <Minus className="w-3.5 h-3.5" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5" />
+                  )}
+                  {inQrList ? "Listeden Çıkar" : "QR Listesine Ekle"}
+                </button>
+                <p className="text-[11px] text-hub-muted text-center">
                   Print to put on shelf
                 </p>
               </div>

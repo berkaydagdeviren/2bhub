@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { Download, Share2, X, Printer } from "lucide-react";
+import { useRef, useState } from "react";
+import { Download, Share2, X, Printer, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatDate } from "@/lib/utils";
 import type { B2BSale } from "@/types";
@@ -9,10 +9,12 @@ import type { B2BSale } from "@/types";
 interface MockIrsaliyeProps {
   sale: B2BSale | null;
   onClose: () => void;
+  onShared?: () => void;
 }
 
-export default function MockIrsaliye({ sale, onClose }: MockIrsaliyeProps) {
+export default function MockIrsaliye({ sale, onClose, onShared }: MockIrsaliyeProps) {
   const irsaliyeRef = useRef<HTMLDivElement>(null);
+  const [sharing, setSharing] = useState(false);
 
   if (!sale) return null;
 
@@ -20,12 +22,85 @@ export default function MockIrsaliye({ sale, onClose }: MockIrsaliyeProps) {
     (item) => Number(item.returned_quantity) < Number(item.quantity)
   );
 
-  function generateHTML(): string {
+  // ── Capture irsaliye div as a PNG blob ──────────────────────────────────────
+  async function captureAsPng(): Promise<Blob> {
+    const html2canvas = (await import("html2canvas")).default;
+    const el = irsaliyeRef.current!;
+    const canvas = await html2canvas(el, {
+      backgroundColor: "#ffffff",
+      scale: 2,        // 2× for sharp output on retina screens
+      useCORS: true,
+      logging: false,
+    });
+    return new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png", 1.0);
+    });
+  }
+
+  // ── Share button: triggers native OS share sheet ────────────────────────────
+  async function handleShare() {
+    if (!sale) return;
+    setSharing(true);
+    try {
+      const blob = await captureAsPng();
+      const file = new File([blob], `irsaliye-${sale.sale_number}.png`, { type: "image/png" });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `İrsaliye #${sale.sale_number} — ${sale.firm_name}`,
+        });
+        onShared?.();
+        if (!onShared) onClose();
+      } else {
+        // Desktop fallback: download the image
+        downloadBlob(blob, `irsaliye-${sale.sale_number}.png`);
+      }
+    } catch (err) {
+      // AbortError means user dismissed the share sheet — not a real error
+      if ((err as Error).name !== "AbortError") {
+        console.error("Share failed:", err);
+        alert("Paylaşım başarısız oldu. Ekran görüntüsü alabilirsiniz.");
+      }
+    }
+    setSharing(false);
+  }
+
+  // ── Download button: saves PNG to device ────────────────────────────────────
+  async function handleDownload() {
+    if (!sale) return;
+    setSharing(true);
+    try {
+      const blob = await captureAsPng();
+      downloadBlob(blob, `irsaliye-${sale.sale_number}.png`);
+    } catch {
+      handlePrint();
+    }
+    setSharing(false);
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Print button ─────────────────────────────────────────────────────────────
+  function handlePrint() {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(generatePrintHTML());
+    printWindow.document.close();
+    printWindow.onload = () => printWindow.print();
+  }
+
+  function generatePrintHTML(): string {
     let rows = "";
-    if (!sale) return "";
     items.forEach((item, i) => {
-      const activeQty =
-        Number(item.quantity) - Number(item.returned_quantity);
+      const activeQty = Number(item.quantity) - Number(item.returned_quantity);
       rows += `
         <tr style="border-bottom: 1px solid #E5E0D8;">
           <td style="padding: 10px 12px; font-size: 13px; color: #7A7468;">${i + 1}</td>
@@ -39,263 +114,57 @@ export default function MockIrsaliye({ sale, onClose }: MockIrsaliyeProps) {
     });
 
     return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: white; }
-    .page {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 40px 32px;
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 32px;
-      padding-bottom: 20px;
-      border-bottom: 2px solid #8B7355;
-    }
-    .logo-area {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .logo-box {
-      width: 40px;
-      height: 40px;
-      background: #F0EBE3;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      font-weight: 800;
-      color: #8B7355;
-    }
-    .logo-text {
-      font-size: 20px;
-      font-weight: 700;
-      color: #1A1A1A;
-      letter-spacing: -0.5px;
-    }
-    .doc-info {
-      text-align: right;
-    }
-    .doc-title {
-      font-size: 11px;
-      font-weight: 700;
-      color: #8B7355;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-    }
-    .doc-number {
-      font-size: 13px;
-      color: #1A1A1A;
-      font-weight: 600;
-      margin-top: 4px;
-    }
-    .doc-date {
-      font-size: 12px;
-      color: #7A7468;
-      margin-top: 2px;
-    }
-    .firm-section {
-      background: #F7F5F0;
-      border-radius: 12px;
-      padding: 16px 20px;
-      margin-bottom: 24px;
-    }
-    .firm-label {
-      font-size: 10px;
-      font-weight: 700;
-      color: #7A7468;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 4px;
-    }
-    .firm-name {
-      font-size: 18px;
-      font-weight: 700;
-      color: #1A1A1A;
-    }
-    .note-text {
-      font-size: 12px;
-      color: #7A7468;
-      margin-top: 4px;
-      font-style: italic;
-    }
-    .employee-text {
-      font-size: 11px;
-      color: #B5AFA6;
-      margin-top: 4px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 24px;
-    }
-    thead tr {
-      border-bottom: 2px solid #E5E0D8;
-    }
-    th {
-      padding: 8px 12px;
-      font-size: 10px;
-      font-weight: 700;
-      color: #7A7468;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      text-align: left;
-    }
-    th:last-child {
-      text-align: right;
-    }
-    .footer {
-      text-align: center;
-      padding-top: 20px;
-      border-top: 1px solid #E5E0D8;
-    }
-    .footer-text {
-      font-size: 10px;
-      color: #B5AFA6;
-      letter-spacing: 0.5px;
-    }
-    .total-row {
-      background: #F7F5F0;
-      border-radius: 8px;
-      padding: 12px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-    }
-    .total-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: #7A7468;
-    }
-    .total-value {
-      font-size: 16px;
-      font-weight: 800;
-      color: #1A1A1A;
-    }
-    @media print {
-      body { margin: 0; }
-      .page { padding: 20px; }
-    }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <div class="header">
-      <div class="logo-area">
-        <div class="logo-box">2B</div>
-        <div class="logo-text">Hub</div>
-      </div>
-      <div class="doc-info">
-        <div class="doc-title">İrsaliye</div>
-        <div class="doc-number">#${sale?.sale_number}</div>
-        <div class="doc-date">${formatDate(sale.created_at)}</div>
-      </div>
-    </div>
-
-    <div class="firm-section">
-      <div class="firm-label">Firma</div>
-      <div class="firm-name">${sale?.firm_name}</div>
-      ${sale?.note ? `<div class="note-text">📝 ${sale?.note}</div>` : ""}
-      <div class="employee-text">Teslim eden: ${sale?.employee_username}</div>
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 40px;">#</th>
-          <th>Ürün</th>
-          <th style="width: 80px; text-align: right;">Adet</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows}
-      </tbody>
-    </table>
-
-    <div class="total-row">
-      <div class="total-label">Toplam Kalem</div>
-      <div class="total-value">${items.length} ürün</div>
-    </div>
-
-    <div class="footer">
-      <div class="footer-text">2B Hub • ${formatDate(sale.created_at)}</div>
-    </div>
+<html><head><meta charset="utf-8"><style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; background: white; }
+.page { max-width: 600px; margin: 0 auto; padding: 40px 32px; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid #8B7355; }
+.logo-box { width: 40px; height: 40px; background: #F0EBE3; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; color: #8B7355; }
+.logo-text { font-size: 20px; font-weight: 700; color: #1A1A1A; letter-spacing: -0.5px; margin-left: 10px; }
+.doc-info { text-align: right; }
+.doc-title { font-size: 11px; font-weight: 700; color: #8B7355; text-transform: uppercase; letter-spacing: 1.5px; }
+.doc-number { font-size: 13px; color: #1A1A1A; font-weight: 600; margin-top: 4px; }
+.doc-date { font-size: 12px; color: #7A7468; margin-top: 2px; }
+.firm-section { background: #F7F5F0; border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; }
+.firm-label { font-size: 10px; font-weight: 700; color: #7A7468; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.firm-name { font-size: 18px; font-weight: 700; color: #1A1A1A; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+thead tr { border-bottom: 2px solid #E5E0D8; }
+th { padding: 8px 12px; font-size: 10px; font-weight: 700; color: #7A7468; text-transform: uppercase; letter-spacing: 1px; text-align: left; }
+th:last-child { text-align: right; }
+.total-row { background: #F7F5F0; border-radius: 8px; padding: 12px 20px; display: flex; justify-content: space-between; margin-bottom: 24px; }
+.footer { text-align: center; padding-top: 20px; border-top: 1px solid #E5E0D8; font-size: 10px; color: #B5AFA6; }
+</style></head><body><div class="page">
+<div class="header">
+  <div style="display:flex;align-items:center;">
+    <div class="logo-box">2B</div>
+    <div class="logo-text">Hub</div>
   </div>
-</body>
-</html>`;
+  <div class="doc-info">
+    <div class="doc-title">İrsaliye</div>
+    <div class="doc-number">#${sale.sale_number}</div>
+    <div class="doc-date">${formatDate(sale.created_at)}</div>
+  </div>
+</div>
+<div class="firm-section">
+  <div class="firm-label">Firma</div>
+  <div class="firm-name">${sale.firm_name}</div>
+  ${sale.note ? `<div style="font-size:12px;color:#7A7468;margin-top:4px;font-style:italic;">📝 ${sale.note}</div>` : ""}
+  <div style="font-size:11px;color:#B5AFA6;margin-top:4px;">Teslim eden: ${sale.employee_username}</div>
+</div>
+<table>
+  <thead><tr><th style="width:40px;">#</th><th>Ürün</th><th style="width:80px;text-align:right;">Adet</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="total-row">
+  <span style="font-size:12px;font-weight:600;color:#7A7468;">Toplam Kalem</span>
+  <span style="font-size:16px;font-weight:800;color:#1A1A1A;">${items.length} ürün</span>
+</div>
+<div class="footer">2B Hub • ${formatDate(sale.created_at)}</div>
+</div></body></html>`;
   }
 
-  function handlePrint() {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-    printWindow.document.write(generateHTML());
-    printWindow.document.close();
-    printWindow.onload = () => printWindow.print();
-  }
-
-  async function handleDownload() {
-    try {
-      // Create an iframe to render HTML
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.left = "-9999px";
-      iframe.style.width = "600px";
-      iframe.style.height = "900px";
-      document.body.appendChild(iframe);
-
-      const doc = iframe.contentDocument;
-      if (!doc) return;
-
-      doc.open();
-      doc.write(generateHTML());
-      doc.close();
-
-      // Wait for render
-      await new Promise((r) => setTimeout(r, 500));
-
-      // Use html2canvas if available, otherwise fallback to print
-      handlePrint();
-      document.body.removeChild(iframe);
-    } catch {
-      handlePrint();
-    }
-  }
-
-  async function handleShare() {
-    // Create a blob of the HTML for sharing
-    const blob = new Blob([generateHTML()], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    if (!sale) return "";
-    if (navigator.share) {
-      try {
-        // Try native share (works on mobile)
-        await navigator.share({
-          title: `İrsaliye #${sale?.sale_number} - ${sale?.firm_name}`,
-          text: `${sale?.firm_name} - ${items.length} ürün - ${formatDate(sale.created_at)}`,
-        });
-      } catch {
-        // Fallback: open in new tab for manual screenshot
-        window.open(url, "_blank");
-      }
-    } else {
-      // Desktop: open in new tab
-      const win = window.open("", "_blank");
-      if (win) {
-        win.document.write(generateHTML());
-        win.document.close();
-      }
-    }
-  }
-
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <AnimatePresence>
       {sale && (
@@ -396,16 +265,10 @@ export default function MockIrsaliye({ sale, onClose }: MockIrsaliyeProps) {
                     <tbody>
                       {items.map((item, i) => {
                         const activeQty =
-                          Number(item.quantity) -
-                          Number(item.returned_quantity);
+                          Number(item.quantity) - Number(item.returned_quantity);
                         return (
-                          <tr
-                            key={item.id}
-                            className="border-b border-hub-border/30"
-                          >
-                            <td className="py-2.5 text-xs text-hub-muted">
-                              {i + 1}
-                            </td>
+                          <tr key={item.id} className="border-b border-hub-border/30">
+                            <td className="py-2.5 text-xs text-hub-muted">{i + 1}</td>
                             <td className="py-2.5">
                               <p className="text-sm font-semibold text-hub-primary">
                                 {item.product_name}
@@ -457,29 +320,39 @@ export default function MockIrsaliye({ sale, onClose }: MockIrsaliyeProps) {
               <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={handlePrint}
+                  disabled={sharing}
                   className="btn-secondary flex items-center justify-center gap-2 text-sm py-2.5"
                 >
                   <Printer className="w-4 h-4" />
-                  Print
+                  Yazdır
                 </button>
+
                 <button
                   onClick={handleShare}
+                  disabled={sharing}
                   className="btn-primary flex items-center justify-center gap-2 text-sm py-2.5"
                 >
-                  <Share2 className="w-4 h-4" />
-                  Share
+                  {sharing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Share2 className="w-4 h-4" />
+                  )}
+                  {sharing ? "..." : "Paylaş"}
                 </button>
+
                 <button
                   onClick={handleDownload}
+                  disabled={sharing}
                   className="btn-secondary flex items-center justify-center gap-2 text-sm py-2.5"
                 >
-                  <Download className="w-4 h-4" />
-                  Open
+                  {sharing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  PNG
                 </button>
               </div>
-              <p className="text-[10px] text-hub-muted text-center mt-2">
-                Share opens in a new tab — screenshot or save as PDF
-              </p>
             </div>
           </motion.div>
         </>

@@ -15,6 +15,7 @@ import {
   Lock,
   AlertTriangle,
   Share2,
+  QrCode,
 } from "lucide-react";
 import Link from "next/link";
 import { usePricing } from "@/hooks/usePricing";
@@ -47,6 +48,7 @@ export default function SalesPage() {
   // Search
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [matchedVariations, setMatchedVariations] = useState<Record<string, string>>({});
   const [searching, setSearching] = useState(false);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -54,6 +56,7 @@ export default function SalesPage() {
   // Retail Cart
   const [retailCart, setRetailCart] = useState<CartItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProductMatchedVar, setSelectedProductMatchedVar] = useState<string | null>(null);
   const [discountInput, setDiscountInput] = useState("");
   const [checkoutNotes, setCheckoutNotes] = useState("");
   const [processing, setProcessing] = useState(false);
@@ -64,6 +67,7 @@ export default function SalesPage() {
   const [b2bCart, setB2BCart] = useState<B2BCartItem[]>([]);
   const [selectedB2BProduct, setSelectedB2BProduct] =
     useState<Product | null>(null);
+  const [selectedB2BProductMatchedVar, setSelectedB2BProductMatchedVar] = useState<string | null>(null);
   const [b2bNote, setB2BNote] = useState("");
   const [completedB2BSale, setCompletedB2BSale] = useState<B2BSale | null>(
     null
@@ -101,6 +105,7 @@ export default function SalesPage() {
   const doSearch = useCallback(async (query: string) => {
     if (query.length < 2) {
       setSearchResults([]);
+      setMatchedVariations({});
       setSearching(false);
       return;
     }
@@ -112,16 +117,166 @@ export default function SalesPage() {
       );
       const data = await res.json();
       setSearchResults(data.products || []);
+      setMatchedVariations(data.matchedVariations || {});
     } catch (err) {
       console.error("Search failed:", err);
     }
     setSearching(false);
   }, []);
 
+  // QR camera scan state
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrModalInput, setQrModalInput] = useState("");
+  const [hasBarcodeDetector, setHasBarcodeDetector] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+      setHasBarcodeDetector(true);
+    }
+  }, []);
+
+  // Returns { type: "id"|"short", value } or null
+  function parseQrValue(val: string): { type: "id" | "short"; value: string } | null {
+    const trimmed = val.trim();
+    // Full URL with UUID path
+    const urlMatch = trimmed.match(/\/p\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    if (urlMatch) return { type: "id", value: urlMatch[1] };
+    // Bare UUID
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+      return { type: "id", value: trimmed };
+    }
+    // Short code: 6-8 hex chars (no hyphens)
+    if (/^[0-9a-f]{6,8}$/i.test(trimmed)) {
+      return { type: "short", value: trimmed };
+    }
+    return null;
+  }
+
   function handleSearchChange(val: string) {
+    // Detect scanned QR URL or short code
+    const parsed = parseQrValue(val);
+    if (parsed) {
+      if (parsed.type === "id") {
+        addByProductId(parsed.value);
+      } else {
+        addByShortCode(parsed.value);
+      }
+      setSearchQuery("");
+      return;
+    }
     setSearchQuery(val);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => doSearch(val), 300);
+  }
+
+  async function addByShortCode(shortCode: string) {
+    try {
+      const res = await fetch(`/api/products/search?short_id=${encodeURIComponent(shortCode)}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (data.products && data.products.length === 1) {
+        if (mode === "b2b") setSelectedB2BProduct(data.products[0]);
+        else setSelectedProduct(data.products[0]);
+      } else if (data.products && data.products.length > 1) {
+        // Multiple matches — fall through to normal search
+        setSearchQuery(shortCode);
+        doSearch(shortCode);
+      } else {
+        alert("Ürün bulunamadı: " + shortCode);
+      }
+    } catch (err) {
+      console.error("Short code lookup failed:", err);
+    }
+  }
+
+  function openQrModal() {
+    setQrModalInput("");
+    setShowQrModal(true);
+    if (hasBarcodeDetector) {
+      startCameraScan();
+    }
+  }
+
+  function closeQrModal() {
+    setShowQrModal(false);
+    stopCamera();
+  }
+
+  async function startCameraScan() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+      streamRef.current = stream;
+      // Wait for video element to mount
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+          runBarcodeDetection();
+        }
+      }, 300);
+    } catch {
+      // Camera not available, fallback to text input
+      setHasBarcodeDetector(false);
+    }
+  }
+
+  function stopCamera() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }
+
+  async function runBarcodeDetection() {
+    if (!videoRef.current || !streamRef.current) return;
+    try {
+      const detector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
+      const detect = async () => {
+        if (!videoRef.current || !streamRef.current) return;
+        try {
+          const codes = await detector.detect(videoRef.current);
+          if (codes.length > 0) {
+            const rawValue: string = codes[0].rawValue;
+            const parsedQr = parseQrValue(rawValue);
+            if (parsedQr?.type === "id") {
+              addByProductId(parsedQr.value);
+              closeQrModal();
+              return;
+            } else if (parsedQr?.type === "short") {
+              addByShortCode(parsedQr.value);
+              closeQrModal();
+              return;
+            }
+          }
+        } catch {
+          // continue
+        }
+        if (streamRef.current) {
+          requestAnimationFrame(detect);
+        }
+      };
+      detect();
+    } catch {
+      setHasBarcodeDetector(false);
+    }
+  }
+
+  function handleQrModalSubmit() {
+    const parsed = parseQrValue(qrModalInput);
+    if (parsed?.type === "id") {
+      addByProductId(parsed.value);
+      closeQrModal();
+    } else if (parsed?.type === "short") {
+      addByShortCode(parsed.value);
+      closeQrModal();
+    } else {
+      alert("QR URL, UUID veya 6-8 haneli kısa kod girin.");
+    }
   }
 
   // ── QR Scan ────────────────────────────────────────────
@@ -456,10 +611,7 @@ export default function SalesPage() {
               New Order
             </button>
             <button
-              onClick={() => {
-                // Mock irsaliye — Part 6E
-                setIrsaliyeSale(completedB2BSale);
-              }}
+              onClick={() => setIrsaliyeSale(completedB2BSale)}
               className="btn-secondary flex-1 flex items-center justify-center gap-2"
             >
               <Share2 className="w-4 h-4" />
@@ -467,6 +619,16 @@ export default function SalesPage() {
             </button>
           </div>
         </div>
+
+        {/* Modal must live here — this block is an early return so the main layout's modal is never reached */}
+        <MockIrsaliye
+          sale={irsaliyeSale}
+          onClose={() => setIrsaliyeSale(null)}
+          onShared={() => {
+            setIrsaliyeSale(null);
+            setCompletedB2BSale(null);
+          }}
+        />
       </div>
     );
   }
@@ -516,7 +678,14 @@ export default function SalesPage() {
           className="btn-secondary flex items-center gap-2 text-sm py-2"
         >
           <Search className="w-3.5 h-3.5" />
-          History
+          Retail
+        </Link>
+        <Link
+          href="/dashboard/sales/b2b-history"
+          className="btn-secondary flex items-center gap-2 text-sm py-2"
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          B2B
         </Link>
       </div>
 
@@ -612,30 +781,94 @@ export default function SalesPage() {
           )}
 
           {/* Product Search */}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-hub-muted" />
-            <input
-              ref={searchRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="input-base pl-11 pr-10"
-              placeholder="Search products by name..."
-              autoFocus={mode === "retail"}
-            />
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setSearchResults([]);
-                  searchRef.current?.focus();
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-hub-muted hover:text-hub-primary rounded transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-hub-muted" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="input-base pl-11 pr-10"
+                placeholder="Ürün adı veya kısa kod (örn: A3F9C1E2)..."
+                autoFocus={mode === "retail"}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSearchResults([]);
+                    setMatchedVariations({});
+                    searchRef.current?.focus();
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-hub-muted hover:text-hub-primary rounded transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <button
+              onClick={openQrModal}
+              className="flex-shrink-0 w-11 h-11 flex items-center justify-center rounded-xl border border-hub-border/50 bg-white text-hub-secondary hover:text-hub-accent hover:border-hub-accent/30 transition-colors"
+              title="QR Tara"
+            >
+              <QrCode className="w-5 h-5" />
+            </button>
           </div>
+
+          {/* QR Scan Modal */}
+          {showQrModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl shadow-hub-lg p-6 w-full max-w-sm mx-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-hub-primary flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-hub-accent" />
+                    QR Tara
+                  </h3>
+                  <button
+                    onClick={closeQrModal}
+                    className="p-1.5 text-hub-muted hover:text-hub-primary rounded-lg"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {hasBarcodeDetector ? (
+                  <div className="rounded-xl overflow-hidden bg-black aspect-square">
+                    <video
+                      ref={videoRef}
+                      className="w-full h-full object-cover"
+                      muted
+                      playsInline
+                    />
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  <p className="text-xs text-hub-muted">
+                    {hasBarcodeDetector
+                      ? "Kamera ile tarama aktif. Manuel de girebilirsiniz:"
+                      : "QR etiketteki 8 haneli kısa kodu girin:"}
+                  </p>
+                  <input
+                    type="text"
+                    value={qrModalInput}
+                    onChange={(e) => setQrModalInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleQrModalSubmit()}
+                    className="input-base font-mono tracking-wider"
+                    placeholder="örn: A3F9C1E2"
+                    autoFocus={!hasBarcodeDetector}
+                  />
+                  <button
+                    onClick={handleQrModalSubmit}
+                    className="btn-primary w-full"
+                  >
+                    Ekle
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Results */}
           {searching && (
@@ -646,52 +879,65 @@ export default function SalesPage() {
 
           {!searching && searchResults.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {searchResults.map((product) => (
-                <button
-                  key={product.id}
-                  onClick={() =>
-                    mode === "b2b"
-                      ? setSelectedB2BProduct(product)
-                      : setSelectedProduct(product)
-                  }
-                  className="card p-4 text-left hover:shadow-hub-md hover:border-hub-accent/30 transition-all duration-200 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-14 h-14 rounded-xl bg-hub-bg overflow-hidden flex-shrink-0">
-                      {product.image_url ? (
-                        <img
-                          src={product.image_url}
-                          alt={product.name}
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package className="w-5 h-5 text-hub-muted/30" />
+              {searchResults.map((product) => {
+                const matchedVar = matchedVariations[product.id] ?? null;
+                return (
+                  <button
+                    key={product.id}
+                    onClick={() => {
+                      if (mode === "b2b") {
+                        setSelectedB2BProductMatchedVar(matchedVar);
+                        setSelectedB2BProduct(product);
+                      } else {
+                        setSelectedProductMatchedVar(matchedVar);
+                        setSelectedProduct(product);
+                      }
+                    }}
+                    className="card p-4 text-left hover:shadow-hub-md hover:border-hub-accent/30 transition-all duration-200 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-xl bg-hub-bg overflow-hidden flex-shrink-0">
+                        {product.image_url ? (
+                          <img
+                            src={product.image_url}
+                            alt={product.name}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package className="w-5 h-5 text-hub-muted/30" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-hub-primary truncate group-hover:text-hub-accent transition-colors">
+                          {product.name}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {product.brand &&
+                            typeof product.brand === "object" && (
+                              <span className="text-[9px] font-medium text-hub-accent bg-hub-accent/10 px-1.5 py-0.5 rounded-full">
+                                {(product.brand as { name: string }).name}
+                              </span>
+                            )}
+                          {matchedVar ? (
+                            <span className="text-[9px] font-medium text-hub-success bg-hub-success/10 px-1.5 py-0.5 rounded-full">
+                              ↳ {matchedVar}
+                            </span>
+                          ) : (
+                            product.variations &&
+                            product.variations.length > 0 && (
+                              <span className="text-[9px] text-hub-secondary">
+                                {product.variations.length} var
+                              </span>
+                            )
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-hub-primary truncate group-hover:text-hub-accent transition-colors">
-                        {product.name}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {product.brand &&
-                          typeof product.brand === "object" && (
-                            <span className="text-[9px] font-medium text-hub-accent bg-hub-accent/10 px-1.5 py-0.5 rounded-full">
-                              {(product.brand as { name: string }).name}
-                            </span>
-                          )}
-                        {product.variations &&
-                          product.variations.length > 0 && (
-                            <span className="text-[9px] text-hub-secondary">
-                              {product.variations.length} var
-                            </span>
-                          )}
                       </div>
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -847,15 +1093,23 @@ export default function SalesPage() {
       {/* Modals */}
       <AddToCartModal
         product={selectedProduct}
+        initialVariationLabel={selectedProductMatchedVar}
         calcSalePrice={calcSalePrice}
         getExchangeRate={getExchangeRate}
-        onClose={() => setSelectedProduct(null)}
+        onClose={() => {
+          setSelectedProduct(null);
+          setSelectedProductMatchedVar(null);
+        }}
         onAddToCart={addToRetailCart}
       />
 
       <B2BAddToCartModal
         product={selectedB2BProduct}
-        onClose={() => setSelectedB2BProduct(null)}
+        initialVariationLabel={selectedB2BProductMatchedVar}
+        onClose={() => {
+          setSelectedB2BProduct(null);
+          setSelectedB2BProductMatchedVar(null);
+        }}
         onAddToCart={addToB2BCart}
       />
       <MockIrsaliye

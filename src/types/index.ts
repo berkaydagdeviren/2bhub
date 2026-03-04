@@ -161,41 +161,6 @@ export interface RetailSaleItem {
   created_at: string;
 }
 
-export interface RetailSale {
-  id: string;
-  sale_number: number;
-  employee_id: string;
-  employee_username: string;
-  subtotal: number;
-  discount_amount: number;
-  total: number;
-  payment_method: "cash" | "card";
-  status: "completed" | "returned" | "partially_returned";
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  items?: RetailSaleItem[];
-}
-
-export interface RetailSaleItem {
-  id: string;
-  sale_id: string;
-  product_id: string;
-  product_name: string;
-  product_image: string | null;
-  brand_name: string | null;
-  variation_label: string | null;
-  quantity: number;
-  unit_price: number;
-  price_type: "price1" | "price2";
-  currency: string;
-  exchange_rate: number;
-  unit_price_try: number;
-  line_total: number;
-  returned_quantity: number;
-  created_at: string;
-}
-
 export interface CartItem {
   id: string;
   product_id: string;
@@ -274,4 +239,69 @@ export interface B2BCartItem {
   variation_label: string | null;
   quantity: number;
   price_type: "price1" | "price2";
+}
+
+// ── B2B Records (Checkpoint 7) ─────────────────────────────────
+
+export interface B2BRecordItem extends B2BSaleItem {
+  sale_price_try: number;
+  line_total_try: number;
+}
+
+export interface B2BRecord extends Omit<B2BSale, "items"> {
+  items: B2BRecordItem[];
+}
+
+export interface FirmRecord {
+  firm_id: string;
+  firm_name: string;
+  sales: B2BRecord[];
+  total_items: number;
+  unprocessed_count: number;
+}
+
+// ── Reports (CP9) ─────────────────────────────────────────────
+
+export interface ReportRetailStats {
+  total_revenue: number;
+  total_transactions: number;
+  cash_total: number;
+  card_total: number;
+  total_discount: number;
+  return_count: number;
+  avg_transaction_value: number;
+}
+
+export interface ReportKasa {
+  cash_in: number;
+  cash_out: number;
+  net_kasa: number;
+  card_total: number;
+}
+
+export interface ReportLeaderboardRow {
+  rank: number;
+  employee_username: string;
+  retail_revenue: number;
+  retail_transaction_count: number;
+  b2b_order_count: number;
+}
+
+export interface ReportProductRow {
+  product_id: string;
+  product_name: string;
+  brand_name: string | null;
+  variation_label: string | null;
+  units_sold: number;
+  revenue: number;
+  return_count: number;
+}
+
+export interface ReportData {
+  retailStats: ReportRetailStats;
+  kasa: ReportKasa;
+  leaderboard: ReportLeaderboardRow[];
+  products: ReportProductRow[];
+  date_from: string;
+  date_to: string;
 }
