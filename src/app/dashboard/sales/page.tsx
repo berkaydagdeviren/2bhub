@@ -127,19 +127,12 @@ export default function SalesPage() {
   // QR camera scan state
   const [showQrModal, setShowQrModal] = useState(false);
   const [qrModalInput, setQrModalInput] = useState("");
-  const [hasBarcodeDetector, setHasBarcodeDetector] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-
-  useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      "BarcodeDetector" in window &&
-      window.isSecureContext
-    ) {
-      setHasBarcodeDetector(true);
-    }
-  }, []);
+  const rafRef = useRef<number | null>(null);
 
   // Returns { type: "id"|"short", value } or null
   function parseQrValue(val: string): { type: "id" | "short"; value: string } | null {
@@ -198,10 +191,9 @@ export default function SalesPage() {
 
   function openQrModal() {
     setQrModalInput("");
+    setCameraError("");
+    setCameraActive(false);
     setShowQrModal(true);
-    if (hasBarcodeDetector) {
-      startCameraScan();
-    }
   }
 
   function closeQrModal() {
@@ -210,63 +202,62 @@ export default function SalesPage() {
   }
 
   async function startCameraScan() {
+    setCameraError("");
+    if (!window.isSecureContext) {
+      setCameraError("Kamera sadece HTTPS üzerinde çalışır.");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
       streamRef.current = stream;
-      // Wait for video element to mount
+      setCameraActive(true);
+      // attach stream after React renders the video element
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play();
-          runBarcodeDetection();
+          videoRef.current.play().then(scanFrame).catch(() => {});
         }
-      }, 300);
+      }, 100);
     } catch {
-      // Camera not available, fallback to text input
-      setHasBarcodeDetector(false);
+      setCameraError("Kamera açılamadı. İzin verilmemiş veya cihazda kamera yok.");
     }
   }
 
   function stopCamera() {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    setCameraActive(false);
   }
 
-  async function runBarcodeDetection() {
-    if (!videoRef.current || !streamRef.current) return;
-    try {
-      const detector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
-      const detect = async () => {
-        if (!videoRef.current || !streamRef.current) return;
-        try {
-          const codes = await detector.detect(videoRef.current);
-          if (codes.length > 0) {
-            const rawValue: string = codes[0].rawValue;
-            const parsedQr = parseQrValue(rawValue);
-            if (parsedQr?.type === "id") {
-              addByProductId(parsedQr.value);
-              closeQrModal();
-              return;
-            } else if (parsedQr?.type === "short") {
-              addByShortCode(parsedQr.value);
-              closeQrModal();
-              return;
-            }
-          }
-        } catch {
-          // continue
-        }
-        if (streamRef.current) {
-          requestAnimationFrame(detect);
-        }
-      };
-      detect();
-    } catch {
-      setHasBarcodeDetector(false);
+  async function scanFrame() {
+    if (!videoRef.current || !canvasRef.current || !streamRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (video.readyState < video.HAVE_ENOUGH_DATA) {
+      rafRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const jsQR = (await import("jsqr")).default;
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if (code) {
+      const parsedQr = parseQrValue(code.data);
+      if (parsedQr?.type === "id") { addByProductId(parsedQr.value); closeQrModal(); return; }
+      if (parsedQr?.type === "short") { addByShortCode(parsedQr.value); closeQrModal(); return; }
+    }
+    if (streamRef.current) {
+      rafRef.current = requestAnimationFrame(scanFrame);
     }
   }
 
@@ -837,22 +828,48 @@ export default function SalesPage() {
                   </button>
                 </div>
 
-                {hasBarcodeDetector ? (
-                  <div className="rounded-xl overflow-hidden bg-black aspect-square">
+                {/* Camera feed */}
+                {cameraActive && (
+                  <div className="rounded-xl overflow-hidden bg-black aspect-video relative">
                     <video
                       ref={videoRef}
                       className="w-full h-full object-cover"
                       muted
                       playsInline
                     />
+                    {/* hidden canvas for jsQR decoding */}
+                    <canvas ref={canvasRef} className="hidden" />
                   </div>
-                ) : null}
+                )}
+
+                {cameraError && (
+                  <p className="text-xs text-hub-error bg-hub-error/5 rounded-lg px-3 py-2">
+                    {cameraError}
+                  </p>
+                )}
+
+                {/* Camera toggle button */}
+                {!cameraActive ? (
+                  <button
+                    onClick={startCameraScan}
+                    className="btn-secondary w-full flex items-center justify-center gap-2"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    Kamera ile Tara
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopCamera}
+                    className="btn-secondary w-full flex items-center justify-center gap-2 text-hub-error"
+                  >
+                    <X className="w-4 h-4" />
+                    Kamerayı Kapat
+                  </button>
+                )}
 
                 <div className="space-y-2">
                   <p className="text-xs text-hub-muted">
-                    {hasBarcodeDetector
-                      ? "Kamera ile tarama aktif. Manuel de girebilirsiniz:"
-                      : "QR etiketteki 8 haneli kısa kodu girin:"}
+                    Ya da QR etiketteki 8 haneli kodu girin:
                   </p>
                   <input
                     type="text"
@@ -861,7 +878,7 @@ export default function SalesPage() {
                     onKeyDown={(e) => e.key === "Enter" && handleQrModalSubmit()}
                     className="input-base font-mono tracking-wider"
                     placeholder="örn: A3F9C1E2"
-                    autoFocus={!hasBarcodeDetector}
+                    autoFocus
                   />
                   <button
                     onClick={handleQrModalSubmit}
