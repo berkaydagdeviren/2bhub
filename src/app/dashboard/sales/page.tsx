@@ -673,14 +673,14 @@ export default function SalesPage() {
           className="btn-secondary flex items-center gap-2 text-sm py-2"
         >
           <Search className="w-3.5 h-3.5" />
-          Retail
+          <span className="hidden sm:inline">Retail</span>
         </Link>
         <Link
           href="/dashboard/sales/b2b-history"
           className="btn-secondary flex items-center gap-2 text-sm py-2"
         >
           <Building2 className="w-3.5 h-3.5" />
-          B2B
+          <span className="hidden sm:inline">B2B</span>
         </Link>
       </div>
 
