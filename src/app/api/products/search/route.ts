@@ -3,9 +3,16 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-// Normalize user queries so "M8x50" matches variation_label "M8 × 50"
+/**
+ * Normalize dimension queries so various formats match stored variation labels.
+ * "M8x50" → "M8 × 50"
+ * "M8x"   → "M8 ×"   (trailing x — user is mid-typing)
+ */
 function normalizeQuery(q: string): string {
-  return q.replace(/([a-zA-Z0-9])\s*[xX]\s*([a-zA-Z0-9])/g, "$1 × $2").trim();
+  return q
+    .replace(/([a-zA-Z0-9])\s*[xX]\s*([a-zA-Z0-9])/g, "$1 × $2")
+    .replace(/([a-zA-Z0-9])\s*[xX]\s*$/g, "$1 ×")
+    .trim();
 }
 
 const PRODUCT_SELECT =
@@ -36,7 +43,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Search by short code (first 8 hex chars of UUID without hyphens)
-    // Uses UUID range query — avoids ILIKE on uuid column which needs explicit cast
     if (shortId && shortId.length >= 6) {
       const hex = shortId.replace(/-/g, "").toLowerCase().padEnd(8, "0").slice(0, 8);
       const lowerBound = `${hex}-0000-0000-0000-000000000000`;
@@ -63,7 +69,25 @@ export async function GET(request: NextRequest) {
 
     const normalized = normalizeQuery(q);
 
-    // ── 1. Name-based search ─────────────────────────────────────
+    // Tokenize: split into words of 2+ chars for multi-word smart search
+    const tokens = q
+      .trim()
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
+
+    const seen = new Set<string>();
+    const allResults: Record<string, unknown>[] = [];
+    const matchedVariations: Record<string, string> = {};
+
+    function addResult(p: Record<string, unknown>) {
+      const id = p.id as string;
+      if (!seen.has(id)) {
+        seen.add(id);
+        allResults.push(p);
+      }
+    }
+
+    // ── 1. Exact substring match on product name ─────────────────
     const { data: nameResults, error } = await supabaseAdmin
       .from("products")
       .select(PRODUCT_SELECT)
@@ -73,33 +97,102 @@ export async function GET(request: NextRequest) {
       .limit(20);
 
     if (error) throw error;
+    for (const p of nameResults || []) addResult(p);
 
-    const nameResultIds = new Set((nameResults || []).map((p) => p.id));
-    const matchedVariations: Record<string, string> = {};
+    // ── 2. Multi-token intersection: all words must appear in name ─
+    // Handles "profesyonel şerit metre" → name ILIKE %profesyonel% AND %şerit% AND %metre%
+    if (tokens.length > 1 && tokens.length <= 6) {
+      let tq = supabaseAdmin
+        .from("products")
+        .select(PRODUCT_SELECT)
+        .eq("is_active", true);
+      for (const t of tokens) {
+        tq = tq.ilike("name", "%" + t + "%");
+      }
+      const { data: tokenRes } = await tq.order("name").limit(20);
+      for (const p of tokenRes || []) addResult(p);
+    }
 
-    // ── 2. Variation-label search ────────────────────────────────
-    // Use normalized query so "M8x50" hits "M8 × 50"
+    // ── 3. Brand-based search ────────────────────────────────────
+    // Find brands matching any token, then search their products
+    // filtered by remaining (non-brand) tokens in the product name.
+    if (tokens.length > 0) {
+      const orCond = tokens.map((t) => `name.ilike.%${t}%`).join(",");
+      const { data: brandMatches } = await supabaseAdmin
+        .from("brands")
+        .select("id, name")
+        .or(orCond);
+
+      if (brandMatches && brandMatches.length > 0) {
+        const brandIds = brandMatches.map((b) => b.id);
+
+        // Determine which tokens are brand-name tokens so we don't
+        // require them to also appear in the product name.
+        const brandWords = new Set(
+          brandMatches.flatMap((b) =>
+            b.name.toLowerCase().split(/\s+/)
+          )
+        );
+        const nonBrandTokens = tokens.filter(
+          (t) => !brandWords.has(t.toLowerCase())
+        );
+
+        let bq = supabaseAdmin
+          .from("products")
+          .select(PRODUCT_SELECT)
+          .eq("is_active", true)
+          .in("brand_id", brandIds);
+        for (const t of nonBrandTokens) {
+          bq = bq.ilike("name", "%" + t + "%");
+        }
+        const { data: brandProds } = await bq.order("name").limit(20);
+        for (const p of brandProds || []) addResult(p);
+      }
+    }
+
+    // ── 4. Variation-label search ────────────────────────────────
+    // Uses normalized query so "M8x50" hits "M8 × 50",
+    // and "M8x" (mid-type) hits "M8 × 50" via "M8 ×" prefix match.
+    const varQuery = normalized !== q ? normalized : q;
     const { data: varMatches } = await supabaseAdmin
       .from("product_variations")
       .select("product_id, variation_label")
-      .ilike("variation_label", "%" + normalized + "%")
+      .ilike("variation_label", "%" + varQuery + "%")
       .eq("is_active", true)
       .limit(60);
 
-    if (varMatches && varMatches.length > 0) {
+    // Also try the raw query if it differs from normalized (catches edge cases)
+    const extraVarMatches: typeof varMatches = [];
+    if (normalized !== q) {
+      const { data: rawVarMatches } = await supabaseAdmin
+        .from("product_variations")
+        .select("product_id, variation_label")
+        .ilike("variation_label", "%" + q + "%")
+        .eq("is_active", true)
+        .limit(60);
+      for (const v of rawVarMatches || []) {
+        if (!(varMatches || []).some((m) => m.product_id === v.product_id && m.variation_label === v.variation_label)) {
+          extraVarMatches.push(v);
+        }
+      }
+    }
+
+    const allVarMatches = [...(varMatches || []), ...extraVarMatches];
+
+    if (allVarMatches.length > 0) {
       // Build matched variation map (first match per product)
-      for (const v of varMatches) {
+      for (const v of allVarMatches) {
         if (!matchedVariations[v.product_id]) {
           matchedVariations[v.product_id] = v.variation_label;
         }
       }
 
-      // Fetch products found only via variation (not already in name results)
+      // Fetch products found only via variation (not already in results)
       const extraIds = [
         ...new Set(
-          varMatches
+          allVarMatches
             .map((v) => v.product_id)
-            .filter((id) => !nameResultIds.has(id))
+            .filter((id) => !seen.has(id))
         ),
       ];
 
@@ -111,13 +204,12 @@ export async function GET(request: NextRequest) {
           .in("id", extraIds)
           .order("name");
 
-        const combined = [...(nameResults || []), ...(extraProducts || [])];
-        return NextResponse.json({ products: combined, matchedVariations });
+        for (const p of extraProducts || []) addResult(p);
       }
     }
 
     return NextResponse.json({
-      products: nameResults || [],
+      products: allResults,
       matchedVariations,
     });
   } catch (err) {

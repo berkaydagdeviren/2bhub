@@ -188,12 +188,15 @@ export default function AddToCartModal({
             className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[80]"
           />
 
+          {/* Positioning wrapper — separate from animation so Framer Motion's y transform
+              doesn't override Tailwind's -translate-y-1/2 on desktop */}
+          <div className="fixed inset-x-4 top-[5%] sm:inset-0 sm:flex sm:items-center sm:justify-center z-[90] pointer-events-none">
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed inset-x-4 top-[10%] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-md bg-white rounded-2xl shadow-hub-lg z-[90] overflow-hidden max-h-[80vh] flex flex-col"
+            className="pointer-events-auto w-full sm:max-w-md bg-white rounded-2xl shadow-hub-lg overflow-hidden max-h-[85vh] flex flex-col"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-hub-border/50 flex-shrink-0">
@@ -346,6 +349,7 @@ export default function AddToCartModal({
               )}
             </div>
           </motion.div>
+          </div>
         </>
       )}
     </AnimatePresence>

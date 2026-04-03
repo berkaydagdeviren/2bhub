@@ -936,25 +936,43 @@ export default function SalesPage() {
                         <p className="text-sm font-semibold text-hub-primary truncate group-hover:text-hub-accent transition-colors">
                           {product.name}
                         </p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {product.brand &&
-                            typeof product.brand === "object" && (
-                              <span className="text-[9px] font-medium text-hub-accent bg-hub-accent/10 px-1.5 py-0.5 rounded-full">
-                                {(product.brand as { name: string }).name}
+                        <div className="flex items-center justify-between mt-0.5 gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                            {product.brand &&
+                              typeof product.brand === "object" && (
+                                <span className="text-[9px] font-medium text-hub-accent bg-hub-accent/10 px-1.5 py-0.5 rounded-full">
+                                  {(product.brand as { name: string }).name}
+                                </span>
+                              )}
+                            {matchedVar ? (
+                              <span className="text-[9px] font-medium text-hub-success bg-hub-success/10 px-1.5 py-0.5 rounded-full">
+                                ↳ {matchedVar}
                               </span>
+                            ) : (
+                              product.variations &&
+                              product.variations.length > 0 && (
+                                <span className="text-[9px] text-hub-secondary">
+                                  {product.variations.length} var
+                                </span>
+                              )
                             )}
-                          {matchedVar ? (
-                            <span className="text-[9px] font-medium text-hub-success bg-hub-success/10 px-1.5 py-0.5 rounded-full">
-                              ↳ {matchedVar}
-                            </span>
-                          ) : (
-                            product.variations &&
-                            product.variations.length > 0 && (
-                              <span className="text-[9px] text-hub-secondary">
-                                {product.variations.length} var
-                              </span>
-                            )
-                          )}
+                          </div>
+                          {/* Price badge — only for products with no variations */}
+                          {(!product.variations || product.variations.length === 0) &&
+                            product.list_price > 0 && (() => {
+                              const priceResult = calcSalePrice(
+                                Number(product.list_price),
+                                Number(product.discount_percent),
+                                Number(product.kdv_percent),
+                                Number(product.profit_percent),
+                                product.currency
+                              );
+                              return (
+                                <span className="flex-shrink-0 text-xs font-bold text-hub-success">
+                                  ₺{priceResult.saleTry.toFixed(2)}
+                                </span>
+                              );
+                            })()}
                         </div>
                       </div>
                     </div>
