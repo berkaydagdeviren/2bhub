@@ -39,6 +39,48 @@ export async function GET(
   }
 }
 
+// PATCH — update individual variation prices (no full replace)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await getAuthUserFromRequest(request);
+    if (!user || user.role !== "admin") {
+      return NextResponse.json({ error: "Admin only" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const variations: Array<{
+      id: string;
+      has_custom_price: boolean;
+      list_price: number | null;
+      discount_percent: number | null;
+      list_price2: number | null;
+      discount_percent2: number | null;
+    }> = body.variations || [];
+
+    for (const v of variations) {
+      await supabaseAdmin
+        .from("product_variations")
+        .update({
+          has_custom_price: v.has_custom_price,
+          list_price: v.has_custom_price ? v.list_price : null,
+          discount_percent: v.has_custom_price ? v.discount_percent : null,
+          list_price2: v.has_custom_price ? v.list_price2 : null,
+          discount_percent2: v.has_custom_price ? v.discount_percent2 : null,
+        })
+        .eq("id", v.id)
+        .eq("product_id", params.id);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Variations PATCH error:", err);
+    return NextResponse.json({ error: "Failed to update variations" }, { status: 500 });
+  }
+}
+
 // POST — save variations (bulk replace strategy)
 export async function POST(
   request: NextRequest,
