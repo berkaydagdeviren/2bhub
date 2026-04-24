@@ -3,7 +3,18 @@
     "allow": [
       "Bash(ls:*)",
       "Bash(node:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find C:/Users/yigit/2bhub -maxdepth 2 -name *.png)",
+      "Bash(find C:/Users/yigit -name variation*.png)",
+      "Bash(find C:/Users/yigit/Desktop -name *.png)",
+      "Bash(find C:/Users/yigit -name *.png)",
+      "Bash(find C:/Users/yigit/Downloads -name *.png)",
+      "Bash(find C:/Users/yigit -name gencay*)",
+      "Bash(find C:/Users/yigit -name Screenshot*)",
+      "Bash(find C:/Users/yigit/OneDrive/Masaüstü/2bhub -name *.png -o -name *.PNG)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)"
     ]
   }
 }

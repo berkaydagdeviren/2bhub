@@ -17,7 +17,7 @@ export default function Header({ username }: HeaderProps) {
   // Global Ctrl+E shortcut
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.ctrlKey && e.key === "e") {
+      if (e.shiftKey && e.key === "E") {
         e.preventDefault();
         setQuickEditOpen((prev) => !prev);
       }
@@ -48,11 +48,11 @@ export default function Header({ username }: HeaderProps) {
             <button
               onClick={() => setQuickEditOpen(true)}
               className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-hub-secondary hover:text-hub-primary rounded-lg hover:bg-hub-bg transition-all duration-200 text-xs"
-              title="Hızlı ürün düzenle (Ctrl+E)"
+              title="Hızlı ürün düzenle (Shift+E)"
             >
               <span>Hızlı Düzenle</span>
               <kbd className="text-[10px] bg-hub-bg border border-hub-border/50 px-1 py-0.5 rounded">
-                Ctrl+E
+                Shift+E
               </kbd>
             </button>
             <button
