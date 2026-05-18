@@ -25,6 +25,7 @@ type PasteMode = "row" | "cross";
 type PasteStep = "input" | "map" | "preview";
 type DataFormat = "tab" | "space";
 interface PreviewRow { label: string; price1: string; price2: string }
+interface FindReplacePair { from: string; to: string }
 
 const COL_ROLE_OPTIONS: { value: ColRole; label: string }[] = [
   { value: "ignore", label: "Ignore" }, { value: "label", label: "Label" },
@@ -96,7 +97,7 @@ function autoDetectRoles(rows: string[][]): ColRole[] {
 
 function applyRowMapping(
   rawRows: string[][], colRoles: ColRole[],
-  opts: { labelSuffix: string; labelSep: string; findFrom: string; findTo: string;
+  opts: { labelSuffix: string; labelSep: string; findRules: FindReplacePair[];
           normDecimals: boolean; skipFirstRow: boolean; filterJunk: boolean }
 ): PreviewRow[] {
   const rows = opts.skipFirstRow ? rawRows.slice(1) : rawRows;
@@ -119,7 +120,7 @@ function applyRowMapping(
     }
     let label = lp2 ? `${lp1}${opts.labelSep}${lp2}` : lp1;
     if (opts.normDecimals) label = label.replace(/^(\d+),(\d+)(.*)$/, "$1.$2$3");
-    if (opts.findFrom) label = label.split(opts.findFrom).join(opts.findTo);
+    for (const rule of opts.findRules) { if (rule.from) label = label.split(rule.from).join(rule.to); }
     label = (label + opts.labelSuffix).trim();
     return label ? { label, price1: p1, price2: p2 } : null;
   }).filter((r): r is PreviewRow => r !== null);
@@ -177,7 +178,7 @@ function applyTabCrossMapping(
  */
 function parseSpaceRows(
   text: string,
-  opts: { labelSuffix: string; findFrom: string; findTo: string }
+  opts: { labelSuffix: string; findRules: FindReplacePair[] }
 ): PreviewRow[] {
   const results: PreviewRow[] = [];
   for (const rawLine of text.split("\n")) {
@@ -210,7 +211,7 @@ function parseSpaceRows(
     if (!price || isNaN(parseFloat(price))) continue;
 
     label = (label + opts.labelSuffix).trim();
-    if (opts.findFrom) label = label.split(opts.findFrom).join(opts.findTo);
+    for (const rule of opts.findRules) { if (rule.from) label = label.split(rule.from).join(rule.to); }
     if (!label) continue;
     results.push({ label, price1: price, price2: "" });
   }
@@ -299,8 +300,7 @@ export default function VariationsBuilder({
   const [colRoles, setColRoles] = useState<ColRole[]>([]);
   const [labelSuffix, setLabelSuffix] = useState("");
   const [labelSep, setLabelSep] = useState(" × ");
-  const [labelFindFrom, setLabelFindFrom] = useState("");
-  const [labelFindTo, setLabelFindTo] = useState("");
+  const [labelFindRules, setLabelFindRules] = useState<FindReplacePair[]>([{ from: "", to: "" }]);
   const [normDecimals, setNormDecimals] = useState(false);
   const [skipFirstRow, setSkipFirstRow] = useState(false);
   const [filterJunk, setFilterJunk] = useState(true);
@@ -315,14 +315,13 @@ export default function VariationsBuilder({
 
   // Space-mode options
   const [spaceSuffix, setSpaceSuffix] = useState(" MM");
-  const [spaceFindFrom, setSpaceFindFrom] = useState("");
-  const [spaceFindTo, setSpaceFindTo] = useState("");
+  const [spaceFindRules, setSpaceFindRules] = useState<FindReplacePair[]>([{ from: "", to: "" }]);
   const [spaceSep, setSpaceSep] = useState("X");
   const [spaceColFirst, setSpaceColFirst] = useState(true);
 
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [importAsPrice2, setImportAsPrice2] = useState(false);
-  const [lastImportInfo, setLastImportInfo] = useState<{ count: number; mode: "add" | "update" } | null>(null);
+  const [lastImportInfo, setLastImportInfo] = useState<{ count: number; mode: "add" | "update"; updated?: number; added?: number } | null>(null);
   const [bulkD1, setBulkD1] = useState("");
   const [bulkD2, setBulkD2] = useState("");
 
@@ -347,14 +346,14 @@ export default function VariationsBuilder({
     if (pasteStep !== "map") return [];
     if (dataFormat === "space") {
       if (pasteMode === "row")
-        return parseSpaceRows(rawText, { labelSuffix: spaceSuffix, findFrom: spaceFindFrom, findTo: spaceFindTo }).slice(0, 5);
+        return parseSpaceRows(rawText, { labelSuffix: spaceSuffix, findRules: spaceFindRules }).slice(0, 5);
       else
         return parseSpaceCrossTable(rawText, { sep: spaceSep, colFirst: spaceColFirst }).slice(0, 5);
     }
     if (pasteMode === "row")
       return applyRowMapping(rawRows, colRoles, {
-        labelSuffix, labelSep, findFrom: labelFindFrom,
-        findTo: labelFindTo, normDecimals, skipFirstRow, filterJunk,
+        labelSuffix, labelSep, findRules: labelFindRules,
+        normDecimals, skipFirstRow, filterJunk,
       }).slice(0, 5);
     return applyTabCrossMapping(rawRows, {
       sep: crossSep, colFirst: crossColFirst, skipFirstRow: crossHeaderRows,
@@ -363,9 +362,9 @@ export default function VariationsBuilder({
     }).slice(0, 5);
   }, [
     pasteStep, pasteMode, dataFormat, rawText, rawRows, colRoles,
-    labelSuffix, labelSep, labelFindFrom, labelFindTo, normDecimals, skipFirstRow, filterJunk,
+    labelSuffix, labelSep, labelFindRules, normDecimals, skipFirstRow, filterJunk,
     crossSep, crossColFirst, crossHeaderRows, crossPairedPrices, crossNormalizeHeaders, crossColOffset,
-    spaceSuffix, spaceFindFrom, spaceFindTo, spaceSep, spaceColFirst,
+    spaceSuffix, spaceFindRules, spaceSep, spaceColFirst,
   ]);
 
   // ── Group management ───────────────────────────────
@@ -439,9 +438,9 @@ export default function VariationsBuilder({
   function resetPastePanel() {
     setPasteText(""); setRawRows([]); setRawText(""); setColRoles([]);
     setPreviewRows([]); setPasteStep("input"); setImportAsPrice2(false);
-    setLabelSuffix(""); setLabelFindFrom(""); setLabelFindTo("");
+    setLabelSuffix(""); setLabelFindRules([{ from: "", to: "" }]);
     setNormDecimals(false); setSkipFirstRow(false); setFilterJunk(true);
-    setSpaceSuffix(" MM"); setSpaceFindFrom(""); setSpaceFindTo("");
+    setSpaceSuffix(" MM"); setSpaceFindRules([{ from: "", to: "" }]);
   }
 
   function doParse(text: string) {
@@ -473,13 +472,13 @@ export default function VariationsBuilder({
     let rows: PreviewRow[];
     if (dataFormat === "space") {
       if (pasteMode === "row")
-        rows = parseSpaceRows(rawText, { labelSuffix: spaceSuffix, findFrom: spaceFindFrom, findTo: spaceFindTo });
+        rows = parseSpaceRows(rawText, { labelSuffix: spaceSuffix, findRules: spaceFindRules });
       else
         rows = parseSpaceCrossTable(rawText, { sep: spaceSep, colFirst: spaceColFirst });
     } else if (pasteMode === "row") {
       rows = applyRowMapping(rawRows, colRoles, {
-        labelSuffix, labelSep, findFrom: labelFindFrom,
-        findTo: labelFindTo, normDecimals, skipFirstRow, filterJunk,
+        labelSuffix, labelSep, findRules: labelFindRules,
+        normDecimals, skipFirstRow, filterJunk,
       });
     } else {
       rows = applyTabCrossMapping(rawRows, {
@@ -498,33 +497,39 @@ export default function VariationsBuilder({
   function removePreviewRow(i: number) { setPreviewRows(previewRows.filter((_, j) => j !== i)); }
 
   function importPreviewRows() {
-    let count = 0;
-    const mode: "add" | "update" = importAsPrice2 ? "update" : "add";
     if (importAsPrice2) {
       const map = new Map(previewRows.map(r => [r.label.trim(), r.price1 || r.price2]));
-      count = variations.filter(v => map.has(v.variation_label)).length;
+      const count = variations.filter(v => map.has(v.variation_label)).length;
       onVariationsChange(variations.map(v => {
         const p2 = map.get(v.variation_label);
         return p2 ? { ...v, has_custom_price: true, list_price2: p2 } : v;
       }));
+      setLastImportInfo({ count, mode: "update" });
     } else {
-      const existing = new Set(variations.map(v => v.variation_label));
+      const rowMap = new Map(previewRows.map(r => [r.label.trim(), r]));
+      const existingSet = new Set(variations.map(v => v.variation_label));
+      let updatedCount = 0;
+      const updated = variations.map(v => {
+        const r = rowMap.get(v.variation_label);
+        if (!r) return v;
+        updatedCount++;
+        return { ...v, has_custom_price: true, list_price: r.price1 || v.list_price, ...(r.price2 ? { list_price2: r.price2 } : {}) };
+      });
       const toAdd: VariationInput[] = previewRows
-        .filter(r => r.label.trim() && !existing.has(r.label.trim()))
+        .filter(r => r.label.trim() && !existingSet.has(r.label.trim()))
         .map(r => ({
           variation_label: r.label.trim(), has_custom_price: !!(r.price1 || r.price2),
           list_price: r.price1, discount_percent: "",
           list_price2: r.price2, discount_percent2: "", sku: "",
         }));
-      count = toAdd.length;
-      if (toAdd.length > 0) {
+      if (updatedCount > 0 || toAdd.length > 0) {
         onVariationsChange(
-          [...variations, ...toAdd].sort((a, b) => naturalSort(a.variation_label, b.variation_label))
+          [...updated, ...toAdd].sort((a, b) => naturalSort(a.variation_label, b.variation_label))
         );
       }
+      setLastImportInfo({ count: updatedCount + toAdd.length, mode: "add", updated: updatedCount, added: toAdd.length });
     }
-    setLastImportInfo({ count, mode });
-    resetPastePanel(); // goes back to input step — panel stays open for next batch
+    resetPastePanel();
   }
 
   const validGroups = groups.filter(g => g.name.trim() && g.values.length);
@@ -638,7 +643,7 @@ export default function VariationsBuilder({
                           <div className="flex items-center gap-2">
                             <Check className="w-3.5 h-3.5 flex-shrink-0" />
                             {lastImportInfo.mode === "add"
-                              ? `${lastImportInfo.count} variation${lastImportInfo.count !== 1 ? "s" : ""} added — paste next batch, or close when done.`
+                              ? [lastImportInfo.updated ? `${lastImportInfo.updated} updated` : null, lastImportInfo.added ? `${lastImportInfo.added} added` : null].filter(Boolean).join(", ") + " — paste next batch, or close when done."
                               : `Price 2 updated on ${lastImportInfo.count} row${lastImportInfo.count !== 1 ? "s" : ""} — paste next batch, or close when done.`}
                           </div>
                           <button type="button" onClick={() => { setShowPastePanel(false); setLastImportInfo(null); }}
@@ -682,14 +687,26 @@ export default function VariationsBuilder({
                               placeholder=" MM" />
                           </div>
                           <div>
-                            <label className="text-[10px] text-hub-muted block mb-1">Find → Replace</label>
-                            <div className="flex items-center gap-1">
-                              <input type="text" value={spaceFindFrom} onChange={e => setSpaceFindFrom(e.target.value)}
-                                className="flex-1 px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder="Find" />
-                              <ArrowRight className="w-3 h-3 text-hub-muted flex-shrink-0" />
-                              <input type="text" value={spaceFindTo} onChange={e => setSpaceFindTo(e.target.value)}
-                                className="flex-1 px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder="Replace" />
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] text-hub-muted">Find → Replace</label>
+                              <button type="button" onClick={() => setSpaceFindRules([...spaceFindRules, { from: "", to: "" }])}
+                                className="text-[10px] text-hub-accent hover:underline">+ Add rule</button>
                             </div>
+                            {spaceFindRules.map((rule, idx) => (
+                              <div key={idx} className="flex items-center gap-1 mb-1">
+                                <input type="text" value={rule.from}
+                                  onChange={e => { const u = [...spaceFindRules]; u[idx] = { ...u[idx], from: e.target.value }; setSpaceFindRules(u); }}
+                                  className="flex-1 px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder="Find" />
+                                <ArrowRight className="w-3 h-3 text-hub-muted flex-shrink-0" />
+                                <input type="text" value={rule.to}
+                                  onChange={e => { const u = [...spaceFindRules]; u[idx] = { ...u[idx], to: e.target.value }; setSpaceFindRules(u); }}
+                                  className="flex-1 px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder="Replace" />
+                                {spaceFindRules.length > 1 && (
+                                  <button type="button" onClick={() => setSpaceFindRules(spaceFindRules.filter((_, i) => i !== idx))}
+                                    className="p-1 text-hub-muted hover:text-hub-error rounded transition-colors"><X className="w-3 h-3" /></button>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -790,12 +807,27 @@ export default function VariationsBuilder({
                             <input type="text" value={labelSep} onChange={e => setLabelSep(e.target.value)} className="w-full px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder=" × " />
                           </div>
                         </div>
-                        <div><label className="text-[10px] text-hub-muted block mb-1">Find → Replace</label>
-                          <div className="flex items-center gap-1.5">
-                            <input type="text" value={labelFindFrom} onChange={e => setLabelFindFrom(e.target.value)} className="flex-1 px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder="Find" />
-                            <ArrowRight className="w-3.5 h-3.5 text-hub-muted flex-shrink-0" />
-                            <input type="text" value={labelFindTo} onChange={e => setLabelFindTo(e.target.value)} className="flex-1 px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder="Replace" />
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] text-hub-muted">Find → Replace</label>
+                            <button type="button" onClick={() => setLabelFindRules([...labelFindRules, { from: "", to: "" }])}
+                              className="text-[10px] text-hub-accent hover:underline">+ Add rule</button>
                           </div>
+                          {labelFindRules.map((rule, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5 mb-1">
+                              <input type="text" value={rule.from}
+                                onChange={e => { const u = [...labelFindRules]; u[idx] = { ...u[idx], from: e.target.value }; setLabelFindRules(u); }}
+                                className="flex-1 px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder="Find" />
+                              <ArrowRight className="w-3.5 h-3.5 text-hub-muted flex-shrink-0" />
+                              <input type="text" value={rule.to}
+                                onChange={e => { const u = [...labelFindRules]; u[idx] = { ...u[idx], to: e.target.value }; setLabelFindRules(u); }}
+                                className="flex-1 px-2 py-1 rounded-lg border border-hub-border/30 bg-white text-xs text-hub-primary focus:outline-none focus:ring-1 focus:ring-hub-accent/20" placeholder="Replace" />
+                              {labelFindRules.length > 1 && (
+                                <button type="button" onClick={() => setLabelFindRules(labelFindRules.filter((_, i) => i !== idx))}
+                                  className="p-1 text-hub-muted hover:text-hub-error rounded transition-colors"><X className="w-3 h-3" /></button>
+                              )}
+                            </div>
+                          ))}
                         </div>
                         <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                           {[{ checked: normDecimals, set: setNormDecimals, label: "Normalize decimals (1,0→1.0)" },
